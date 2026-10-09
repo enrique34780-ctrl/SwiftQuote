@@ -13,9 +13,9 @@ const PORT = Number(process.env.PORT || 3000);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) { console.error('Invalid PORT.'); process.exit(1); }
 const isProd = process.env.NODE_ENV === 'production';
 const APP_NAME = process.env.APP_NAME || 'SwiftQuote';
-const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Your Service Business';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-only-change-me';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'change-this-before-production';
+const BUSINESS_NAME = process.env.BUSINESS_NAME || 'SwiftQuote';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'i-am-the-chosen-one-of-the-world.';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Ramirez123!!';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
