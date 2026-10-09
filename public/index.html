@@ -1,1 +1,302 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="SwiftQuote — Service marketplace connecting customers with vetted providers"><title>SwiftQuote — Service Marketplace</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/marketplace.css"></head><body><nav class="header"><div class="container"><div class="logo">SwiftQuote</div><div class="nav-links"><a href="#services" class="nav-link">Services</a><a href="#browse" class="nav-link">Browse Providers</a><a href="#account" class="nav-link">Account</a><a href="#provider" class="nav-link">Provider</a></div></div></nav><main><section class="hero"><div class="container"><div class="hero-content"><h1>Find Quality Services, Book with Confidence</h1><p>Connect with vetted, rated service providers in your area. Get instant quotes and professional support.</p></div></div></section><section id="services" class="section services-section"><div class="container"><h2>What service do you need?</h2><div class="services-grid" id="servicesList"></div></div></section><section id="browse" class="section browse-section"><div class="container"><h2>Browse Service Providers</h2><div class="search-filters"><input type="text" id="serviceFilter" placeholder="Service or category..." class="input"><input type="text" id="zipFilter" placeholder="ZIP code" class="input"><button id="searchBtn" class="btn btn-primary">Search</button></div><div class="providers-grid" id="providersList"></div></div></section><section id="account" class="section account-section"><div class="container"><div class="form-columns"><div class="form-col"><h3>Customer Login</h3><form id="customerLoginForm" class="form"><input type="email" placeholder="Email" required class="input"><input type="password" placeholder="Password" required class="input"><button type="submit" class="btn btn-primary">Login</button><p class="form-toggle">New here? <a href="#" onclick="toggleForm('customer-register')">Create Account</a></p></form><form id="customerRegisterForm" class="form hidden"><input type="email" placeholder="Email" required class="input"><input type="password" placeholder="Password (8+ chars)" required class="input"><button type="submit" class="btn btn-primary">Create Account</button><p class="form-toggle">Already have an account? <a href="#" onclick="toggleForm('customer-login')">Login</a></p></form></div><div class="form-col"><h3>Active Request</h3><form id="marketRequestForm" class="form"><select id="serviceSelect" class="input" required><option value="">Select a service...</option></select><textarea id="details" placeholder="Describe what you need..." required class="input"></textarea><input type="text" id="zipCode" placeholder="ZIP code" required class="input"><select id="timing" class="input" required><option value="">When do you need it?</option><option value="today">Today</option><option value="this_week">This week</option><option value="this_month">This month</option><option value="flexible">Flexible</option></select><button type="submit" class="btn btn-primary">Request Quotes</button><p id="requestMsg" class="message"></p></form></div></div></div></section><section id="customer-dashboard" class="section dashboard-section hidden"><div class="container"><h2>Your Account</h2><div class="dashboard-tabs"><button class="tab-btn active" onclick="switchTab('customer-requests')">My Requests</button><button class="tab-btn" onclick="switchTab('customer-quotes')">Quotes</button><button class="tab-btn" onclick="switchTab('customer-jobs')">Jobs</button><button class="tab-btn" onclick="switchTab('customer-settings')">Settings</button></div><div id="customer-requests" class="tab-content active"><div id="customerRequests"></div></div><div id="customer-quotes" class="tab-content"><div id="customerQuotes"></div></div><div id="customer-jobs" class="tab-content"><div id="customerJobs"></div></div><div id="customer-settings" class="tab-content"><form id="customerSettingsForm" class="form"><input type="email" id="settingsEmail" class="input" disabled><input type="password" placeholder="New password (leave blank to keep)" class="input"><button type="submit" class="btn btn-primary">Update</button></form><button id="logoutBtn" class="btn btn-danger">Logout</button></div></div></section><section id="provider" class="section provider-section"><div class="container"><div class="form-columns"><div class="form-col"><h3>Provider Login</h3><form id="providerLoginForm" class="form"><input type="email" placeholder="Email" required class="input"><input type="password" placeholder="Password" required class="input"><button type="submit" class="btn btn-primary">Login</button><p class="form-toggle">New provider? <a href="#" onclick="toggleForm('provider-register')">Register</a></p></form><form id="providerRegisterForm" class="form hidden"><input type="email" placeholder="Email" required class="input"><input type="password" placeholder="Password (8+ chars)" required class="input"><input type="text" placeholder="Business name" required class="input"><select class="input" required><option value="individual">Individual</option><option value="contractor">Contractor</option><option value="company">Company</option></select><button type="submit" class="btn btn-primary">Register</button><p class="form-toggle">Already registered? <a href="#" onclick="toggleForm('provider-login')">Login</a></p></form></div></div></div></section><section id="provider-dashboard" class="section dashboard-section hidden"><div class="container"><h2>Provider Workspace</h2><div class="dashboard-header"><div class="trust-card"><h4>Your Trust Score</h4><div id="trustScore" class="score">—</div><p id="trustDetails"></p></div><div class="subscription-card"><h4>Subscription</h4><div id="subscriptionStatus">Loading...</div><button id="upgradeBtn" class="btn btn-primary">Upgrade Plan</button></div></div><div class="dashboard-tabs"><button class="tab-btn active" onclick="switchProviderTab('provider-leads')">Available Leads</button><button class="tab-btn" onclick="switchProviderTab('provider-jobs')">Active Jobs</button><button class="tab-btn" onclick="switchProviderTab('provider-profile')">My Profile</button><button class="tab-btn" onclick="switchProviderTab('provider-settings')">Settings</button></div><div id="provider-leads" class="tab-content active"><div id="providerLeads"></div></div><div id="provider-jobs" class="tab-content"><div id="providerJobs"></div></div><div id="provider-profile" class="tab-content"><form id="providerProfileForm" class="form"><input type="text" id="businessName" placeholder="Business name" class="input"><select id="providerIndustry" class="input"><option value="general">General</option><option value="home_services">Home Services</option><option value="landscaping">Landscaping</option></select><textarea id="providerServices" placeholder="Services you offer (comma-separated)" class="input"></textarea><input type="text" id="serviceArea" placeholder="Service areas (ZIP codes, space-separated)" class="input"><textarea id="providerDescription" placeholder="About your business" class="input"></textarea><button type="submit" class="btn btn-primary">Save Profile</button></form></div><div id="provider-settings" class="tab-content"><form id="providerSettingsForm" class="form"><input type="email" id="providerEmail" class="input" disabled><input type="password" placeholder="New password (leave blank to keep)" class="input"><button type="submit" class="btn btn-primary">Update</button></form><button id="providerLogoutBtn" class="btn btn-danger">Logout</button></div></div></section></main><footer class="footer"><div class="container"><p>&copy; 2026 SwiftQuote. Connecting services with customers.</p></div></footer><script src="/marketplace-app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SwiftQuote connects customers with trusted local service providers." />
+    <title>SwiftQuote | Local Service Marketplace</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="container nav">
+        <div class="brand">SwiftQuote</div>
+        <nav class="nav-links" aria-label="Main navigation">
+          <a href="#services">Services</a>
+          <a href="#providers">Providers</a>
+          <a href="#account">Account</a>
+          <a href="#provider">Provider</a>
+          <a href="/admin">Admin</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow">LOCAL SERVICES • SMART MATCHING</p>
+            <h1>Find trusted service pros in minutes.</h1>
+            <p class="hero-text">
+              Request quotes for home, landscaping, cleaning, repairs, and more. Match with vetted providers,
+              compare offers, and book securely.
+            </p>
+            <div class="cta-row">
+              <a href="#request" class="btn primary">Request a quote</a>
+              <a href="#providers" class="btn secondary">Browse providers</a>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <div class="stat-card">
+              <span class="stat-label">Verified providers</span>
+              <strong>4.9/5 avg</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Median response</span>
+              <strong>under 2 hrs</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Jobs booked</span>
+              <strong>1,200+</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="services" class="section">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">SERVICE DIRECTORY</p>
+            <h2>What do you need?</h2>
+          </div>
+          <div id="servicesGrid" class="cards-grid"></div>
+        </div>
+      </section>
+
+      <section id="request" class="section alt">
+        <div class="container narrow">
+          <div class="section-head">
+            <p class="eyebrow">REQUEST A SERVICE</p>
+            <h2>Tell providers what you need.</h2>
+          </div>
+          <form id="requestForm" class="panel form-panel">
+            <div class="field-row two-up">
+              <label>
+                <span>Service</span>
+                <select id="requestService" required>
+                  <option value="">Select a service</option>
+                </select>
+              </label>
+              <label>
+                <span>Timing</span>
+                <select id="requestTiming" required>
+                  <option value="">When do you need it?</option>
+                  <option value="today">Today</option>
+                  <option value="this_week">This week</option>
+                  <option value="this_month">This month</option>
+                  <option value="flexible">Flexible</option>
+                </select>
+              </label>
+            </div>
+            <div class="field-row two-up">
+              <label>
+                <span>ZIP code</span>
+                <input id="requestZip" type="text" placeholder="e.g. 94105" required />
+              </label>
+              <label>
+                <span>Estimated project size</span>
+                <select id="requestSize" required>
+                  <option value="">Choose size</option>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </label>
+            </div>
+            <label>
+              <span>Project details</span>
+              <textarea id="requestDetails" rows="5" placeholder="Tell us what needs to be done, budget range, and any requirements." required></textarea>
+            </label>
+            <div class="field-row two-up">
+              <label>
+                <span>Name</span>
+                <input id="requestName" type="text" placeholder="Your full name" required />
+              </label>
+              <label>
+                <span>Email</span>
+                <input id="requestEmail" type="email" placeholder="you@example.com" required />
+              </label>
+            </div>
+            <label>
+              <span>Phone</span>
+              <input id="requestPhone" type="tel" placeholder="(555) 000-0000" required />
+            </label>
+            <label>
+              <span>Address</span>
+              <textarea id="requestAddress" rows="3" placeholder="Street address or service location" required></textarea>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Submit request</button>
+            </div>
+            <div id="requestStatus" class="status" aria-live="polite"></div>
+          </form>
+        </div>
+      </section>
+
+      <section id="providers" class="section">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">PROVIDER DIRECTORY</p>
+            <h2>Find service providers.</h2>
+          </div>
+          <div class="filters">
+            <input id="providerIndustry" type="text" placeholder="Industry or service" />
+            <input id="providerZip" type="text" placeholder="ZIP code" />
+            <button id="providerSearch" class="btn primary">Search</button>
+          </div>
+          <div id="providersGrid" class="cards-grid"></div>
+        </div>
+      </section>
+
+      <section id="account" class="section alt">
+        <div class="container narrow">
+          <div class="section-head">
+            <p class="eyebrow">ACCOUNT</p>
+            <h2>Use SwiftQuote your way.</h2>
+          </div>
+
+          <div class="account-layout">
+            <div class="panel">
+              <div class="panel-header">
+                <h3>Customer login</h3>
+              </div>
+              <form id="customerLoginForm" class="stack-form">
+                <label>
+                  <span>Email</span>
+                  <input type="email" name="email" placeholder="you@example.com" required />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input type="password" name="password" placeholder="Password" required />
+                </label>
+                <button type="submit" class="btn primary">Login</button>
+              </form>
+              <div class="small-link"><a href="#" id="showCustomerRegister">Create customer account</a></div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <h3>Customer account</h3>
+              </div>
+              <form id="customerRegisterForm" class="stack-form hidden">
+                <label>
+                  <span>Name</span>
+                  <input type="text" name="name" placeholder="Full name" required />
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input type="email" name="email" placeholder="you@example.com" required />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input type="password" name="password" placeholder="At least 8 characters" required />
+                </label>
+                <button type="submit" class="btn primary">Create account</button>
+              </form>
+              <div id="customerAuthStatus" class="status" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="provider" class="section">
+        <div class="container narrow">
+          <div class="section-head">
+            <p class="eyebrow">PROVIDER WORKSPACE</p>
+            <h2>Manage your marketplace business.</h2>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Provider access</h3>
+            </div>
+            <form id="providerLoginForm" class="stack-form">
+              <label>
+                <span>Email</span>
+                <input type="email" name="email" placeholder="provider@example.com" required />
+              </label>
+              <label>
+                <span>Password</span>
+                <input type="password" name="password" placeholder="Password" required />
+              </label>
+              <button type="submit" class="btn primary">Provider login</button>
+            </form>
+            <div class="small-link"><a href="#" id="showProviderRegister">Register as a provider</a></div>
+          </div>
+
+          <div class="panel hidden" id="providerRegisterContainer">
+            <div class="panel-header">
+              <h3>Register provider</h3>
+            </div>
+            <form id="providerRegisterForm" class="stack-form">
+              <label>
+                <span>Business name</span>
+                <input type="text" name="businessName" placeholder="Business or company name" required />
+              </label>
+              <label>
+                <span>Email</span>
+                <input type="email" name="email" placeholder="provider@example.com" required />
+              </label>
+              <label>
+                <span>Password</span>
+                <input type="password" name="password" placeholder="At least 8 characters" required />
+              </label>
+              <label>
+                <span>Provider type</span>
+                <select name="providerKind" required>
+                  <option value="individual">Individual</option>
+                  <option value="contractor">Contractor</option>
+                  <option value="company">Company</option>
+                </select>
+              </label>
+              <button type="submit" class="btn primary">Create provider account</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <section id="dashboard" class="section hidden">
+        <div class="container">
+          <div class="section-head">
+            <p class="eyebrow">YOUR DASHBOARD</p>
+            <h2 id="dashboardTitle">Account overview</h2>
+          </div>
+
+          <div class="dashboard-nav">
+            <button class="tab-btn active" data-tab="customerRequestsTab">My requests</button>
+            <button class="tab-btn" data-tab="customerQuotesTab">Quotes</button>
+            <button class="tab-btn" data-tab="customerJobsTab">Jobs</button>
+            <button class="tab-btn" data-tab="providerLeadsTab">Leads</button>
+            <button class="tab-btn" data-tab="providerJobsTab">Provider jobs</button>
+            <button id="logoutBtn" class="btn secondary danger">Logout</button>
+          </div>
+
+          <div id="customerRequestsTab" class="tab-panel active">
+            <div id="requestsList" class="stack-list"></div>
+          </div>
+          <div id="customerQuotesTab" class="tab-panel">
+            <div id="quotesList" class="stack-list"></div>
+          </div>
+          <div id="customerJobsTab" class="tab-panel">
+            <div id="jobsList" class="stack-list"></div>
+          </div>
+          <div id="providerLeadsTab" class="tab-panel">
+            <div id="providerLeadsList" class="stack-list"></div>
+          </div>
+          <div id="providerJobsTab" class="tab-panel">
+            <div id="providerJobsList" class="stack-list"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <span>SwiftQuote</span>
+        <span>Customer requests • Provider leads • Secure workflows</span>
+      </div>
+    </footer>
+
+    <script src="/marketplace-app.js"></script>
+  </body>
+</html>
