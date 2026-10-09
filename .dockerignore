@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.env
+.git
+*.zip
+__pycache__/
+*.py[cod]
+data/*.db
+data/*.db-shm
+data/*.db-wal

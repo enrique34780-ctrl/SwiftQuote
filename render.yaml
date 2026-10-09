@@ -1,0 +1,28 @@
+# SwiftQuote Render staging Blueprint. Free instances are for smoke testing only:
+# they do not provide persistent disk storage, so SQLite data can be lost on redeploy/sleep.
+# Do not use for real customers until persistent storage and billing have been approved.
+services:
+  - type: web
+    name: swiftquote-staging
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm install --omit=dev --no-audit --no-fund
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_NAME
+        value: SwiftQuote
+      - key: BUSINESS_NAME
+        value: Your Service Business
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: DB_PATH
+        value: ./data/swiftquote.db

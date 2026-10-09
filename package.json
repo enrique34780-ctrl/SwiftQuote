@@ -1,0 +1,22 @@
+{
+  "name": "swiftquote-production",
+  "version": "1.18.0",
+  "private": true,
+  "description": "Multi-tenant service marketplace, lead intelligence, quoting and provider subscription platform.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "better-sqlite3": "11.10.0",
+    "dotenv": "16.6.1",
+    "express": "5.1.0",
+    "helmet": "8.1.0",
+    "openai": "6.5.0"
+  }
+}
