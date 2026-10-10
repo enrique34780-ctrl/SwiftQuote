@@ -1,3 +1,4 @@
+
 {
   "name": "swiftquote-production",
   "version": "1.18.0",
@@ -5,6 +6,7 @@
   "description": "Multi-tenant service marketplace, lead intelligence, quoting and provider subscription platform.",
   "type": "module",
   "scripts": {
+    "prestart": "node scripts/sync-frontend.js",
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test"
