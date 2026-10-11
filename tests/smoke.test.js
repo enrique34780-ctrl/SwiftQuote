@@ -33,7 +33,8 @@ before(async () => {
       APP_ORIGIN: '',
       TRUST_PROXY_HOPS: '0',
       SESSION_SECRET: 'test-only-session-secret-12345678901234567890',
-      ADMIN_PASSWORD: 'test-only-admin-password-123456'
+      ADMIN_PASSWORD: 'test-only-admin-password-123456',
+      STRIPE_WEBHOOK_SECRET: 'test-only-stripe-webhook-secret-1234567890'
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -122,4 +123,61 @@ test('showcase publishing rejects unauthenticated requests', async () => {
     body: JSON.stringify({ type: 'project', title: 'Test', mediaUrl: 'https://example.com/work' })
   });
   assert.equal(response.status, 401);
+});
+
+test('signed Stripe subscription checkout activates only the correct provider account', async () => {
+  const payload = {
+    name: 'Stripe Smoke Provider',
+    email: 'stripe-provider@example.test',
+    password: 'ValidSmokeTestPassword123!',
+    accountType: 'provider'
+  };
+  const register = await fetch(baseUrl + '/api/account/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify(payload)
+  });
+  assert.equal(register.status, 201);
+  const account = await register.json();
+  const cookie = (register.headers.get('set-cookie') || '').split(';')[0];
+  assert.ok(cookie, 'provider session cookie should be issued');
+
+  const now = Math.floor(Date.now() / 1000);
+  const event = {
+    id: 'evt_swiftquote_subscription_smoke',
+    type: 'checkout.session.completed',
+    created: now,
+    data: { object: {
+      id: 'cs_swiftquote_smoke',
+      mode: 'subscription',
+      payment_status: 'paid',
+      customer: 'cus_swiftquote_smoke',
+      subscription: 'sub_swiftquote_smoke',
+      client_reference_id: String(account.accountId),
+      metadata: { swiftquote_account_id: String(account.accountId), swiftquote_plan: 'contractor' }
+    }}
+  };
+  const raw = JSON.stringify(event);
+  const crypto = await import('node:crypto');
+  const signature = crypto.createHmac('sha256', 'test-only-stripe-webhook-secret-1234567890').update(now + '.' + raw).digest('hex');
+  const webhook = await fetch(baseUrl + '/api/billing/stripe-webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'stripe-signature': 't=' + now + ',v1=' + signature },
+    body: raw
+  });
+  assert.equal(webhook.status, 200, await webhook.text());
+
+  const usage = await fetch(baseUrl + '/api/provider/usage', { headers: { cookie } });
+  assert.equal(usage.status, 200);
+  const body = await usage.json();
+  assert.equal(body.subscription.status, 'active');
+  assert.equal(body.subscription.plan, 'contractor');
+
+  const duplicate = await fetch(baseUrl + '/api/billing/stripe-webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'stripe-signature': 't=' + now + ',v1=' + signature },
+    body: raw
+  });
+  assert.equal(duplicate.status, 200);
+  assert.equal((await duplicate.json()).duplicate, true);
 });
