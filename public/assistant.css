@@ -7,3 +7,11 @@
 .assistant-compose textarea{min-height:100px;resize:vertical}
 .assistant-meta{font-size:.9rem;opacity:.8}
 @media(max-width:600px){.assistant-compose{grid-template-columns:1fr}.assistant-message{max-width:100%}}
+
+.assistant-sources{align-self:stretch;max-width:100%;padding:.85rem 1rem;border:1px solid var(--border,#d7dce2);border-radius:12px;background:var(--panel,#fff);overflow-wrap:anywhere}
+.assistant-sources h3{font-size:1rem;margin:0 0 .5rem}
+.assistant-sources ol{margin:.25rem 0;padding-left:1.4rem}
+.assistant-sources li{margin:.6rem 0}
+.assistant-sources a{color:var(--link,#4169e1);text-decoration:underline}
+.assistant-source-domain{font-size:.82rem;opacity:.75}
+.assistant-sources p{font-size:.9rem;margin:.25rem 0;line-height:1.45}
