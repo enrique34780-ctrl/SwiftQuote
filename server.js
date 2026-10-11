@@ -560,6 +560,19 @@ CREATE TABLE IF NOT EXISTS provider_payout_ledger (
   FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_payout_ledger_provider ON provider_payout_ledger(provider_account_id, status, created_at DESC);
+CREATE TABLE IF NOT EXISTS ai_projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  project_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  plan_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ai_projects_account_updated ON ai_projects(account_id, updated_at DESC);
+
 
 `);
 // Add optional public contact columns to existing SQLite installations.
@@ -1372,6 +1385,94 @@ app.post('/api/ai/blueprint',requireAccount,requireAccountCsrf,requireJson,async
   }catch{
     res.status(502).json({error:'AI could not produce a valid, sufficiently complete blueprint. Try simplifying the brief or create an editable starter plan.'});
   }
+});
+
+
+function sanitizeProjectPlan(plan, fallbackTitle, fallbackType) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) throw new Error('Invalid project plan.');
+  const text = (v, max=600) => clean(typeof v === 'string' ? v : '', max);
+  const list = (v, maxItems=16, maxLen=500) => Array.isArray(v) ? v.slice(0,maxItems).map(x=>text(typeof x==='string'?x:(x&&typeof x==='object'?(x.title||x.name||x.text||''):''),maxLen)).filter(Boolean) : [];
+  const tasks = v => Array.isArray(v) ? v.slice(0,30).map(t => ({
+    title:text(t?.title,180),
+    description:text(t?.description,500),
+    depends_on:list(t?.depends_on,8,120),
+    effort:text(t?.effort,80),
+    status:['todo','doing','done','blocked'].includes(t?.status)?t.status:'todo'
+  })).filter(t=>t.title) : [];
+  const workstreams = Array.isArray(plan.workstreams) ? plan.workstreams.slice(0,12).map(w=>({name:text(w?.name,120),purpose:text(w?.purpose,300),tasks:tasks(w?.tasks)})).filter(w=>w.name&&w.tasks.length) : [];
+  const milestones = Array.isArray(plan.milestones) ? plan.milestones.slice(0,16).map(m=>({name:text(m?.name,160),acceptance_criteria:list(m?.acceptance_criteria,10,300),depends_on:list(m?.depends_on,8,120)})).filter(m=>m.name) : [];
+  const risks = Array.isArray(plan.risks) ? plan.risks.slice(0,20).map(r=>({risk:text(r?.risk,300),severity:['low','medium','high','critical'].includes(r?.severity)?r.severity:'medium',mitigation:text(r?.mitigation,500),owner:text(r?.owner,100)})).filter(r=>r.risk) : [];
+  const deliverables = Array.isArray(plan.deliverables) ? plan.deliverables.slice(0,20).map(d=>({name:text(d?.name,160),acceptance_criteria:list(d?.acceptance_criteria,10,300)})).filter(d=>d.name) : [];
+  const out={
+    title:text(plan.title,120)||text(fallbackTitle,120)||'Untitled project',
+    project_type:text(plan.project_type,80)||text(fallbackType,80)||'Other',
+    executive_summary:text(plan.executive_summary,1500),
+    goal:text(plan.goal,800),
+    scope_included:list(plan.scope_included,16,300),
+    scope_excluded:list(plan.scope_excluded,16,300),
+    assumptions:list(plan.assumptions,20,400),
+    open_questions:list(plan.open_questions,20,300),
+    workstreams,milestones,risks,deliverables,
+    resources:list(plan.resources,20,300),
+    budget_guidance:text(plan.budget_guidance,1200),
+    verification_plan:list(plan.verification_plan,20,400),
+    next_actions:list(plan.next_actions,12,300),
+    status:'draft',
+    safety_note:'AI-generated project draft. Confirm facts, prices, measurements, legal requirements, and safety-critical details. Do not treat estimates or generated content as verified.'
+  };
+  if(!out.executive_summary||!out.goal||!out.workstreams.length)throw new Error('Incomplete project plan.');
+  return out;
+}
+
+app.post('/api/ai/project-copilot',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!ai.configured)return res.status(503).json({error:'AI project planning is not configured. Add a server-side OpenAI or Gemini key in Render.'});
+  if(!rateLimit(rateKey('ai-project-copilot',req.account.account_id),8,60*60_000))return res.status(429).json({error:'Project copilot limit reached. Try again later.'});
+  const b=req.body||{};
+  const title=clean(b.title,120),type=clean(b.type,80)||'Other',brief=clean(b.brief,5000),constraints=clean(b.constraints,1600),timeline=clean(b.timeline,160),budget=clean(b.budget,160);
+  if(title.length<2||brief.length<20)return res.status(400).json({error:'Enter a project name and describe the goal in at least 20 characters.'});
+  try{
+    const raw=String(await ai.generateText({
+      system:'You are SwiftQuote Project Copilot, a careful project planning assistant for home, construction, service-business, product, event, operations, and software projects. Return JSON only with keys: title, project_type, executive_summary, goal, scope_included (string array), scope_excluded (string array), assumptions (string array), open_questions (string array), workstreams (array of objects with name, purpose, tasks array of objects with title, description, depends_on string array, effort, status), milestones (array of objects with name, acceptance_criteria string array, depends_on string array), risks (array of objects with risk, severity low/medium/high/critical, mitigation, owner), deliverables (array of objects with name and acceptance_criteria string array), resources (string array), budget_guidance (string), verification_plan (string array), next_actions (string array). Make a useful, ordered plan with actionable tasks, dependencies, acceptance criteria, risk controls, and verification. Separate facts from assumptions and ask questions where missing information materially changes the plan. Do not claim you executed tasks, accessed external systems, verified current inventory/prices, confirmed permits, or guaranteed accuracy. Never invent live prices or supplier stock. If budget or dates are missing, say so. For construction include measurement, permit/code confirmation, product fit, and professional review for structural/electrical/plumbing/gas/waterproofing/safety-critical work. For software include tests, security, privacy, deployment, monitoring, rollback, and human approval before production changes. Do not give unsafe instructions. Keep to 4-8 workstreams, 3-8 tasks per workstream, and clear next actions.',
+      user:JSON.stringify({project_name:title,project_type:type,goal_and_context:brief,constraints_and_known_facts:constraints||'Not supplied',target_timeline:timeline||'Not supplied',budget:budget||'Not supplied'}),
+      maxOutputTokens:1900,json:true
+    })).trim();
+    const parsed=JSON.parse(raw);
+    const plan=sanitizeProjectPlan(parsed,title,type);
+    const now=Date.now();
+    const stored=db.prepare('INSERT INTO ai_projects(account_id,title,project_type,status,plan_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(req.account.account_id,plan.title,plan.project_type,'draft',JSON.stringify(plan),now,now);
+    audit(req.account.account_id,'ai','project_plan_created','ai_project',Number(stored.lastInsertRowid),{type:plan.project_type});
+    recordRisk(req.account.account_id,req,'ai_project_copilot',0,{chars:brief.length,workstreams:plan.workstreams.length});
+    res.status(201).json({ok:true,projectId:Number(stored.lastInsertRowid),project:plan,createdAt:now});
+  }catch{
+    res.status(502).json({error:'AI could not create a complete structured plan. Try adding clearer requirements or create a manual starter plan.'});
+  }
+});
+
+app.get('/api/ai/projects',requireAccount,(req,res)=>{
+  noStore(res);
+  const rows=db.prepare('SELECT id,title,project_type,status,created_at,updated_at FROM ai_projects WHERE account_id=? ORDER BY updated_at DESC LIMIT 50').all(req.account.account_id);
+  res.json({projects:rows.map(p=>({...p,id:Number(p.id)}))});
+});
+app.get('/api/ai/projects/:id',requireAccount,(req,res)=>{
+  noStore(res);
+  const id=Number(req.params.id);
+  if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid project id.'});
+  const row=db.prepare('SELECT id,title,project_type,status,plan_json,created_at,updated_at FROM ai_projects WHERE id=? AND account_id=?').get(id,req.account.account_id);
+  if(!row)return res.status(404).json({error:'Project not found.'});
+  try{return res.json({projectId:Number(row.id),project:JSON.parse(row.plan_json),createdAt:row.created_at,updatedAt:row.updated_at});}
+  catch{return res.status(500).json({error:'Saved project could not be read.'});}
+});
+app.delete('/api/ai/projects/:id',requireAccount,requireAccountCsrf,requireJson,(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  const id=Number(req.params.id);
+  if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid project id.'});
+  const result=db.prepare('DELETE FROM ai_projects WHERE id=? AND account_id=?').run(id,req.account.account_id);
+  if(!result.changes)return res.status(404).json({error:'Project not found.'});
+  audit(req.account.account_id,'ai','project_plan_deleted','ai_project',id,{});
+  res.json({ok:true});
 });
 
 app.post('/api/ai/simulate-renovation',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
