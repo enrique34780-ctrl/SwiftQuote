@@ -7,7 +7,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import OpenAI, { toFile } from 'openai';
 import { createAIProvider } from './ai-provider.js';
-import { buildLocalProjectPlan, buildLocalBlueprint, validateLocalPlan, analyzeLocalRequirements } from './local-ai-engine.js';
+import { buildLocalProjectPlan, buildLocalBlueprint, validateLocalPlan, analyzeLocalRequirements, buildLocalTestMatrix } from './local-ai-engine.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -1451,6 +1451,23 @@ app.post('/api/ai/project-copilot',requireAccount,requireAccountCsrf,requireJson
     res.status(201).json({ok:true,engine:ai.configured?'external':'local',projectId:Number(stored.lastInsertRowid),project:plan,createdAt:now});
   }catch{
     res.status(502).json({error:'AI could not create a complete structured plan. Try adding clearer requirements or create a manual starter plan.'});
+  }
+});
+
+app.post('/api/ai/test-matrix',requireAccount,requireAccountCsrf,requireJson,(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!rateLimit(rateKey('ai-test-matrix',req.account.account_id),30,60*60_000))return res.status(429).json({error:'Test checklist limit reached. Try again later.'});
+  const body=req.body||{};
+  const title=clean(body.title,120),type=clean(body.type,80)||'Other',brief=clean(body.brief,5000);
+  if(title.length<2||brief.length<10)return res.status(400).json({error:'Provide a project name and at least 10 characters describing the project.'});
+  try{
+    const matrix=buildLocalTestMatrix({title,type,brief});
+    recordRisk(req.account.account_id,req,'local_test_matrix',0,{cases:matrix.cases.length,type});
+    return res.json({ok:true,matrix});
+  }catch(error){
+    console.error('Local test matrix generation failed:',error?.message||error);
+    return res.status(400).json({error:'The test checklist could not be generated. Review the project details and try again.'});
   }
 });
 
