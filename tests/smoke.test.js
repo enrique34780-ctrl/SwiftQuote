@@ -181,3 +181,50 @@ test('signed Stripe subscription checkout activates only the correct provider ac
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
 });
+
+test('customer can register, submit a service request, and retrieve it from their workspace', async () => {
+  const servicesResponse = await fetch(baseUrl + '/api/marketplace/services');
+  assert.equal(servicesResponse.status, 200);
+  const catalog = await servicesResponse.json();
+  const service = catalog.services[0];
+  assert.ok(service?.label && service?.industry);
+
+  const register = await fetch(baseUrl + '/api/account/register', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({
+      name: 'Workspace Test Customer',
+      email: 'workspace-customer@example.test',
+      password: 'ValidSmokeTestPassword123!',
+      accountType: 'customer'
+    })
+  });
+  assert.equal(register.status, 201);
+  const cookie = (register.headers.get('set-cookie') || '').split(';')[0];
+  assert.ok(cookie, 'customer session cookie should be issued');
+
+  const requestResponse = await fetch(baseUrl + '/api/marketplace/request', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({
+      name: 'Workspace Test Customer',
+      email: 'workspace-customer@example.test',
+      phone: '555-0100',
+      service: service.label,
+      industry: service.industry,
+      jobSize: 'medium',
+      timing: 'Within two weeks',
+      address: '123 Test Street',
+      zip: '72904',
+      details: 'Please provide an estimate for this service request.'
+    })
+  });
+  assert.equal(requestResponse.status, 201);
+  const created = await requestResponse.json();
+  assert.ok(created.requestId > 0);
+
+  const workspace = await fetch(baseUrl + '/api/customer/requests', { headers: { cookie } });
+  assert.equal(workspace.status, 200);
+  const body = await workspace.json();
+  assert.ok(body.requests.some(item => item.id === created.requestId && item.service === service.label));
+});
