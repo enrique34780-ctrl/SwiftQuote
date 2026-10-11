@@ -5,6 +5,8 @@
  */
 const MAX_QUERY_CHARS = 500;
 const MAX_RESULTS = 5;
+const MAX_QUERY_BATCH = 3;
+const MAX_AGGREGATED_RESULTS = 9;
 
 function cleanText(value, max = 1200) {
   return String(value ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
