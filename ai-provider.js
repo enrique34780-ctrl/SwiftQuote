@@ -32,12 +32,14 @@ export function createAIProvider({
   compatibleModel = 'llama3.1',
   fetchImpl = globalThis.fetch,
   timeoutMs = 12_000,
+  mode = 'auto',
 } = {}) {
+  const providerMode = mode === 'compatible-only' ? 'compatible-only' : 'auto';
   const hasOpenAI = Boolean(openai && openaiApiKey);
   const hasGemini = Boolean(geminiApiKey);
   const baseUrl = normalizeBaseUrl(compatibleBaseUrl);
   const hasCompatible = Boolean(baseUrl && compatibleModel);
-  const configured = hasOpenAI || hasGemini || hasCompatible;
+  const configured = providerMode === 'compatible-only' ? hasCompatible : hasOpenAI || hasGemini || hasCompatible;
 
   async function fetchWithDeadline(url, options) {
     const controller = new AbortController();
@@ -83,6 +85,7 @@ export function createAIProvider({
 
   return {
     configured,
+    mode: providerMode,
     providers: { openai: hasOpenAI, gemini: hasGemini, compatible: hasCompatible },
     async generateText({ system, user, messages = null, maxOutputTokens = 512, json = false } = {}) {
       const systemPrompt = boundedText(system, 12_000);
@@ -105,6 +108,12 @@ export function createAIProvider({
         } catch {
           failures.push('Compatible AI request failed');
         }
+      }
+
+      // Strict mode is useful for privacy-sensitive deployments: never send prompts
+      // to OpenAI or Gemini, even if their keys are accidentally still configured.
+      if (providerMode === 'compatible-only') {
+        throw new Error(hasCompatible ? 'Configured AI providers were unavailable' : 'AI is not configured');
       }
 
       if (hasOpenAI) {
