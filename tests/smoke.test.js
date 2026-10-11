@@ -178,7 +178,7 @@ test('AI project workspace is private, persists plans, and enforces account owne
 
   const list = await fetch(baseUrl + '/api/ai/projects', { headers: { cookie: owner.cookie } });
   assert.equal(list.status, 200);
-  assert.equal((await list.json()).projects.length, 1);
+  assert.equal((await list.json()).projects.length, 2, 'local generated plan and manually saved plan should both persist');
 
   const ownProject = await fetch(baseUrl + '/api/ai/projects/' + created.projectId, { headers: { cookie: owner.cookie } });
   assert.equal(ownProject.status, 200);
