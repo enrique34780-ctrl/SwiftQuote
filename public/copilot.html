@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="SwiftQuote AI Project Copilot turns home, business, product, and software ideas into organized plans, tasks, milestones, risk checks, and deliverables.">
+<title>AI Project Copilot — SwiftQuote</title>
+<link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/project-tools.css">
+</head>
+<body>
+<header class="nav"><a class="brand" href="/">Swift<span>Quote</span></a><nav><a href="/">Home</a><a href="/blueprints.html">Blueprint Studio</a><a href="/simulator.html">Project Simulator</a><a href="/#account">Account</a></nav></header>
+<main class="page-wrap">
+<section class="studio-hero"><div class="eyebrow">SWIFTQUOTE AI WORKSPACE</div><h1>One idea. A plan you can work through.</h1><p>Turn a home renovation, business launch, product, event, operations improvement, or software idea into workstreams, ordered tasks, milestones, risks, deliverables, and verification steps.</p><div class="pill-row"><span>Structured planning</span><span>Risk-aware tasks</span><span>Account-scoped saved projects</span><span>Export & print</span></div></section>
+<div class="studio-grid">
+<section class="studio-panel"><h2>Describe the project</h2><form id="copilotForm">
+<label>Project name<input name="title" maxlength="120" required placeholder="e.g. Launch a home-renovation service marketplace"></label>
+<label>Project category<select name="type"><option>Home renovation / construction</option><option>Business launch / growth</option><option>Software / technology</option><option>Product design / manufacturing</option><option>Event / operations</option><option>Marketing / content</option><option>Landscaping / outdoor</option><option>Other</option></select></label>
+<label>Goal and context<textarea name="brief" minlength="20" maxlength="5000" required placeholder="What are you trying to achieve? Who is it for? What does success look like? What is already built or known?"></textarea></label>
+<label>Known constraints, requirements, and things to avoid (optional)<textarea name="constraints" maxlength="1600" placeholder="Existing systems, dimensions, team size, accessibility needs, required tools, security requirements, approvals, etc."></textarea></label>
+<label>Target timeline (optional)<input name="timeline" maxlength="160" placeholder="e.g. prototype in 6 weeks; flexible"></label>
+<label>Budget (optional)<input name="budget" maxlength="160" placeholder="e.g. $2,000–$5,000 or not yet known"></label>
+<div class="studio-actions"><button class="primary" id="generateProject" type="submit">Build my project plan</button><button class="ghost" id="resetCopilot" type="reset">Clear form</button></div>
+<p id="copilotStatus" class="status-line" role="status" aria-live="polite">AI planning requires a signed-in account and server-side AI configuration.</p>
+</form></section>
+<section class="studio-panel"><h2>What the copilot creates</h2><ul class="studio-list"><li>Executive summary, goal, scope, and assumptions.</li><li>Workstreams with tasks, dependencies, and effort notes.</li><li>Milestones with acceptance criteria.</li><li>Risk register with severity and mitigations.</li><li>Deliverables, resources, and budget guidance.</li><li>Verification steps and the next practical actions.</li></ul><div class="studio-notice"><strong>Boundaries:</strong> the copilot plans; it does not silently purchase products, hire providers, deploy software, change accounts, or claim to have completed real-world work. Prices, inventory, permits, dimensions, and external facts must be verified.</div><a class="ghost" href="/blueprints.html">Need a room layout? Open Blueprint Studio →</a><br><a class="ghost" href="/simulator.html">Need a visual preview? Open Project Simulator →</a></section>
+</div>
+<section class="studio-panel" id="savedProjectsPanel"><div class="section-head"><div class="eyebrow">YOUR ACCOUNT</div><h2>Saved project plans</h2><p class="meta">Plans generated here are saved to your account. Only your account can read or delete them.</p></div><div id="savedProjects" class="saved-project-list"><p class="meta">Checking your saved projects…</p></div><button id="refreshProjects" class="ghost" type="button">Refresh saved projects</button></section>
+<section class="studio-panel" id="projectOutput" hidden><div class="section-head"><div class="eyebrow">PROJECT PLAN</div><h2 id="projectTitle">Your plan</h2><p id="projectSummary" class="meta"></p></div><div id="projectDetails" class="studio-result"></div><div class="studio-actions no-print"><button id="downloadProject" class="primary" type="button">Download project JSON</button><button id="printProject" class="ghost" type="button">Print / save PDF</button></div></section>
+</main>
+<footer><span>SwiftQuote AI Project Copilot</span><span>Plans are drafts; verify before acting.</span></footer>
+<script src="/copilot-page.js" defer></script>
+</body></html>
