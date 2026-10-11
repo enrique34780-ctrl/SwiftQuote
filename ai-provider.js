@@ -15,7 +15,7 @@ function normalizeBaseUrl(value) {
   try {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return '';
-    return url.toString().replace(/\\/+$/, '');
+    return url.toString().replace(/\/+$/, '');
   } catch {
     return '';
   }
@@ -52,7 +52,7 @@ export function createAIProvider({
   }
 
   async function generateCompatible({ systemPrompt, safeMessages, maxTokens, json }) {
-    const endpoint = /\\/v1$/i.test(baseUrl) ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+    const endpoint = /\/v1$/i.test(baseUrl) ? \`\${baseUrl}/chat/completions\` : \`\${baseUrl}/v1/chat/completions\`;
     const headers = { 'content-type': 'application/json' };
     if (compatibleApiKey) headers.authorization = `Bearer ${compatibleApiKey}`;
     const { response, clear } = await fetchWithDeadline(endpoint, {
