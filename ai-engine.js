@@ -48,7 +48,7 @@ export function buildAssistantSystemPrompt({ appName = 'SwiftQuote' } = {}) {
 function localReply(message) {
   const text = message.toLowerCase();
   if (/\b(hello|hi|hey|good morning|good afternoon)\b/.test(text) && text.length < 100) {
-    return 'Hello! I’m SwiftQuote’s local assistant. I can help organize a project, clarify requirements, and create a structured project plan. A language-model provider is not configured, so my answers are limited to built-in planning logic rather than open-ended reasoning.';
+    return 'Hello! I’m SwiftQuote’s local assistant. I can help organize a project, clarify requirements, and create a structured project plan. A language-model provider is not configured; this is not a language-model response, and my answers are limited to built-in planning logic rather than open-ended reasoning.';
   }
 
   if (/\b(plan|planning|project|launch|build|renovat|remodel|roadmap|blueprint)\b/.test(text)) {
