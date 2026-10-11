@@ -97,19 +97,42 @@ export function createWebResearch({ apiKey = '', fetchImpl = globalThis.fetch, t
     return { provider: 'wikipedia', results: results.slice(0, MAX_RESULTS) };
   }
 
+  async function search(query) {
+    const safeQuery = cleanText(query, MAX_QUERY_CHARS);
+    if (safeQuery.length < 3) return { provider: 'none', results: [] };
+    try {
+      return tavilyConfigured ? await tavilySearch(safeQuery) : await wikipediaSearch(safeQuery);
+    } catch {
+      return { provider: tavilyConfigured ? 'tavily' : 'wikipedia', results: [], unavailable: true };
+    }
+  }
+
+  async function searchMany(queries) {
+    const uniqueQueries = [...new Set((Array.isArray(queries) ? queries : [])
+      .map(query => cleanText(query, MAX_QUERY_CHARS))
+      .filter(query => query.length >= 3))].slice(0, MAX_QUERY_BATCH);
+    if (!uniqueQueries.length) return { provider: 'none', results: [], queries: [], unavailable: false };
+    const outcomes = await Promise.all(uniqueQueries.map(query => search(query)));
+    const byUrl = new Map();
+    for (const outcome of outcomes) {
+      for (const item of outcome.results || []) {
+        const key = item.url.toLowerCase().replace(/\/$/, '');
+        if (!byUrl.has(key)) byUrl.set(key, item);
+      }
+    }
+    return {
+      provider: tavilyConfigured ? 'tavily' : 'wikipedia',
+      results: [...byUrl.values()].slice(0, MAX_AGGREGATED_RESULTS),
+      queries: uniqueQueries,
+      unavailable: outcomes.every(outcome => outcome.unavailable === true),
+      searchesCompleted: outcomes.filter(outcome => !outcome.unavailable).length,
+    };
+  }
+
   return {
     configured: true,
     provider: tavilyConfigured ? 'tavily' : 'wikipedia',
-    async search(query) {
-      const safeQuery = cleanText(query, MAX_QUERY_CHARS);
-      if (safeQuery.length < 3) return { provider: 'none', results: [] };
-      try {
-        return tavilyConfigured ? await tavilySearch(safeQuery) : await wikipediaSearch(safeQuery);
-      } catch {
-        // Search failure must not break ordinary conversation; do not expose
-        // upstream response bodies, keys, or potentially sensitive request data.
-        return { provider: tavilyConfigured ? 'tavily' : 'wikipedia', results: [], unavailable: true };
-      }
-    },
+    search,
+    searchMany,
   };
 }
