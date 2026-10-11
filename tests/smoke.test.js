@@ -131,7 +131,7 @@ test('AI project workspace is private, persists plans, and enforces account owne
       headers: { 'content-type': 'application/json', origin: baseUrl },
       body: JSON.stringify({ name, email, password: 'ValidSmokeTestPassword123!', accountType: 'customer' })
     });
-    assert.equal(response.status, 201, await response.text());
+    assert.equal(response.status, 201);
     const data = await response.json();
     const cookie = (response.headers.get('set-cookie') || '').split(';')[0];
     assert.ok(cookie);
@@ -157,7 +157,7 @@ test('AI project workspace is private, persists plans, and enforces account owne
     headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
     body: JSON.stringify({ project: plan })
   });
-  assert.equal(create.status, 201, await create.text());
+  assert.equal(create.status, 201);
   const created = await create.json();
   assert.ok(created.projectId > 0);
 
@@ -174,7 +174,7 @@ test('AI project workspace is private, persists plans, and enforces account owne
     headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
     body: JSON.stringify({ project: saved.project })
   });
-  assert.equal(update.status, 200, await update.text());
+  assert.equal(update.status, 200);
   assert.equal((await update.json()).project.workstreams[0].tasks[0].status, 'done');
 
   const crossAccount = await fetch(baseUrl + '/api/ai/projects/' + created.projectId, { headers: { cookie: other.cookie } });
