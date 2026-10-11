@@ -52,7 +52,7 @@ export function createAIProvider({
   }
 
   async function generateCompatible({ systemPrompt, safeMessages, maxTokens, json }) {
-    const endpoint = /\/v1$/i.test(baseUrl) ? \`\${baseUrl}/chat/completions\` : \`\${baseUrl}/v1/chat/completions\`;
+    const endpoint = /\/v1$/i.test(baseUrl) ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions';
     const headers = { 'content-type': 'application/json' };
     if (compatibleApiKey) headers.authorization = `Bearer ${compatibleApiKey}`;
     const { response, clear } = await fetchWithDeadline(endpoint, {
