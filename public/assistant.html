@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Chat with the SwiftQuote AI assistant for project planning, business, software, and renovation guidance.">
+<title>SwiftQuote AI Assistant</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/project-tools.css">
+<link rel="stylesheet" href="/assistant.css">
+</head>
+<body>
+<header class="nav"><a class="brand" href="/">Swift<span>Quote</span></a><nav><a href="/">Home</a><a href="/copilot.html">Project Copilot</a><a href="/blueprints.html">Blueprint Studio</a><a href="/simulator.html">Project Simulator</a><a href="/#account">Account</a></nav></header>
+<main class="assistant-shell">
+<section class="studio-hero"><div class="eyebrow">SWIFTQUOTE AI</div><h1>AI Assistant</h1><p>Ask questions, explore ideas, and work through projects in a conversational workspace.</p><div class="pill-row"><span>Account-protected</span><span>Model adapter</span><span>Conversation is not an action executor</span></div></section>
+<section class="studio-panel">
+<div class="assistant-meta" id="assistantStatus" role="status" aria-live="polite">Checking assistant configuration…</div>
+<div id="assistantChat" class="assistant-chat" aria-live="polite" aria-label="Conversation">
+<div class="assistant-message assistant">Hi. I’m SwiftQuote Assistant. I can help reason through a project when a language model is configured. Without one, a limited local planning fallback is available. I won’t claim to run code or change your systems.</div>
+</div>
+<form id="assistantForm" class="assistant-compose">
+<label class="sr-only" for="assistantInput">Your message</label>
+<textarea id="assistantInput" maxlength="4000" required placeholder="Ask a question or describe what you are working on…"></textarea>
+<button id="assistantSend" class="primary" type="submit">Send</button>
+</form>
+<div class="studio-actions"><button id="assistantClear" class="ghost" type="button">Clear conversation</button><a class="ghost" href="/copilot.html">Open structured Project Copilot →</a></div>
+<p class="assistant-meta">The conversation is kept in this page’s memory only and is not saved as a chat history. Do not paste passwords, API keys, payment details, or other secrets. AI output can be wrong; verify important facts before acting.</p>
+</section>
+</main>
+<footer><span>SwiftQuote AI Assistant</span><span>Human review remains important.</span></footer>
+<script src="/assistant.js" defer></script>
+</body>
+</html>
