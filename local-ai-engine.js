@@ -407,3 +407,151 @@ export function analyzeLocalRequirements(input = {}) {
     note: 'Keyword-based gap detection is a prompt for discussion, not proof that a requirement is present or absent.'
   };
 }
+
+
+/**
+ * Build a deterministic test/inspection matrix from a project brief.
+ * Test steps are proposals; a human must perform them and record evidence.
+ */
+export function buildLocalTestMatrix(input = {}) {
+  const title = clip(input.title, 120) || 'Untitled project';
+  const type = clip(input.type, 80) || 'Other';
+  const brief = clip(input.brief, 5000);
+  const category = classify(type, brief);
+  const cases = [];
+  const add = (area, name, steps, expected, priority = 'medium', reviewer = 'Project owner') => {
+    cases.push({
+      id: 'SQ-T' + String(cases.length + 1).padStart(3, '0'),
+      area, name, steps, expected, priority, reviewer,
+      status: 'not_run',
+      evidence: '',
+      notes: ''
+    });
+  };
+  add('Requirements', 'Trace requirements to acceptance checks',
+    'List each stated requirement and link it to at least one test, inspection, or explicit reason it cannot be verified yet.',
+    'Every important requirement has a measurable pass/fail check or an owner for the unresolved check.', 'high');
+  add('Scope', 'Check exclusions and assumptions',
+    'Review assumptions, exclusions, dependencies, and unresolved questions with the decision-maker.',
+    'No critical assumption is silently treated as a confirmed fact.', 'high');
+  add('Quality', 'Check failure and recovery paths',
+    'Identify likely failure cases; rehearse the safe response, recovery owner, and communication path.',
+    'Failures are detected, recorded, and handled without unsafe or irreversible surprise actions.', 'high');
+  add('Handover', 'Confirm ownership and maintenance',
+    'Ask the intended operator to follow the handover instructions without help from the author.',
+    'The operator can complete core tasks and knows how to get help or recover from common failures.', 'medium');
+
+  if (category === 'software') {
+    add('Security', 'Reject unauthenticated protected actions',
+      'Call each protected endpoint without a valid session, then repeat with a valid session and invalid CSRF token.',
+      'Unauthenticated or forged state-changing requests are rejected; legitimate authorized requests work.', 'critical', 'Security reviewer');
+    add('Authorization', 'Check account and tenant isolation',
+      'Create two test accounts; attempt to read, update, and delete each other’s records using guessed identifiers.',
+      'Every cross-account operation is denied without leaking record contents.', 'critical', 'Security reviewer');
+    add('Input validation', 'Exercise invalid and oversized input',
+      'Submit empty values, wrong types, unexpected fields, boundary-length values, malformed JSON, and oversized payloads.',
+      'Invalid requests fail safely with clear errors; the process remains healthy and data stays consistent.', 'high');
+    add('Reliability', 'Test dependency outage and timeout',
+      'Simulate unavailable external services, database failures in a test environment, and slow responses.',
+      'Errors are handled, timeouts are bounded, sensitive details are not exposed, and retries do not duplicate actions.', 'high');
+    add('Data safety', 'Test backup and restore procedure',
+      'Back up a disposable test database, change test data, restore it, and compare record counts and key relationships.',
+      'The documented restore procedure recovers expected data and its integrity is checked.', 'critical', 'Technical owner');
+    add('Release', 'Test migration and rollback',
+      'Run the migration on a copy of representative data, exercise the application, and test the documented recovery plan.',
+      'Existing records remain readable; failures and rollback behavior are documented before production use.', 'high');
+    add('Accessibility', 'Check keyboard and screen-reader basics',
+      'Navigate primary workflows with keyboard only; inspect labels, focus order, status messages, contrast, and zoom.',
+      'Primary tasks remain operable without a mouse and controls have meaningful labels and focus states.', 'medium');
+  } else if (category === 'construction') {
+    add('Measurements', 'Recheck critical dimensions on site',
+      'Measure the site using consistent units; independently repeat critical measurements and record obstructions/openings.',
+      'A second check agrees within the required project tolerance before materials are ordered.', 'critical', 'Qualified installer / owner');
+    add('Compatibility', 'Verify selected products fit and are compatible',
+      'Compare actual measurements with manufacturer specifications, installation clearances, substrate needs, and required accessories.',
+      'Selected products fit the verified conditions and their installation requirements are understood.', 'high', 'Qualified installer');
+    add('Safety and approvals', 'Confirm applicable permits and qualified review',
+      'Ask the relevant local authority and qualified trades which approvals, inspections, and licensed work apply.',
+      'Requirements are confirmed by appropriate sources; no automated plan is treated as approval.', 'critical', 'Owner / qualified professional');
+    add('Quality', 'Inspect work before it is concealed',
+      'Define stage-by-stage inspection points and document work before walls, floors, or other access is closed.',
+      'Critical work is inspected or tested and evidence is retained before proceeding.', 'critical', 'Qualified inspector / installer');
+    add('Water and structure', 'Check relevant water, drainage, and structural details',
+      'Where applicable, obtain qualified review of waterproofing, drainage, ventilation, load paths, and existing damage.',
+      'Applicable safety-critical details have qualified sign-off and unresolved issues are not covered up.', 'critical', 'Qualified professional');
+  } else if (category === 'business') {
+    add('Customer journey', 'Test onboarding through successful completion',
+      'Walk through a new customer and provider account using test data, including an incomplete profile and a failed step.',
+      'Users understand the next step and can recover from validation errors.', 'high');
+    add('Money', 'Reconcile pricing, fees, refunds, and cancellation',
+      'Use test transactions or a spreadsheet to reconcile the advertised price, fees, tax assumptions, refund rules, and cancellation path.',
+      'The customer-facing terms and the internal records agree; no live payment is made during a test.', 'critical', 'Business owner');
+    add('Operations', 'Test disputes and support escalation',
+      'Simulate a missed appointment, quality complaint, cancellation, and provider unavailability.',
+      'Each scenario has an owner, documented response, and customer communication path.', 'high');
+    add('Market validation', 'Test the offer with real target users',
+      'Interview a small sample of intended customers; record actual objections and whether they take a meaningful next step.',
+      'Demand claims are based on observed evidence rather than assumptions alone.', 'medium');
+  } else if (category === 'product') {
+    add('Functionality', 'Test core use cases and edge conditions',
+      'Write representative normal, boundary, misuse, and failure scenarios and perform them on a prototype.',
+      'Results meet the product requirements or gaps are logged with owners.', 'high');
+    add('Safety and compliance', 'Check hazards and applicable requirements',
+      'Identify foreseeable misuse, material hazards, required standards, and any needed independent testing.',
+      'Applicable safety and certification requirements are assigned to qualified reviewers before release.', 'critical', 'Qualified reviewer');
+    add('Durability', 'Check wear, maintenance, and serviceability',
+      'Define realistic use cycles, inspection criteria, maintenance steps, and replaceable parts where applicable.',
+      'Known maintenance needs and failure limits are documented and supported by evidence.', 'high');
+  } else if (category === 'event') {
+    add('Logistics', 'Rehearse arrival-to-close timeline',
+      'Walk the venue and schedule from setup through teardown; verify owners, access, contacts, and transition timing.',
+      'Every critical time slot and handoff has an accountable owner.', 'high');
+    add('Safety', 'Review emergency and accessibility plans',
+      'Confirm venue rules, accessible routes, crowd capacity, emergency contacts, and contingency arrangements with responsible parties.',
+      'Plans are reviewed by the relevant venue or safety leads; attendees can access needed information.', 'critical');
+    add('Contingency', 'Run a cancellation or disruption scenario',
+      'Simulate a supplier cancellation, severe weather, or a key staff absence and follow the fallback plan.',
+      'A workable alternative and communication owner are identified.', 'high');
+  } else if (category === 'marketing') {
+    add('Claims', 'Verify factual claims and permissions',
+      'Trace each product, performance, testimonial, and comparison claim to supporting evidence and usage permissions.',
+      'Unsupported claims are removed and media rights are documented.', 'high');
+    add('Measurement', 'Check tracking and conversion path',
+      'Perform a test journey from content view through the intended action and verify analytics events using test data.',
+      'Key events are recorded once with the intended attribution and privacy controls.', 'medium');
+    add('Experiment', 'Review test design before publishing',
+      'Record baseline, hypothesis, primary metric, duration, and the one variable being changed.',
+      'Results can be interpreted without overstating causation.', 'medium');
+  } else if (category === 'outdoor') {
+    add('Site', 'Verify boundaries, slope, drainage, and utilities',
+      'Confirm property boundaries and drainage conditions and use the appropriate utility-location process before digging.',
+      'The work area and relevant constraints are verified before ground disturbance.', 'critical', 'Owner / qualified professional');
+    add('Environment', 'Check local suitability and maintenance',
+      'Confirm local climate, mature plant size, water needs, material durability, and seasonal maintenance.',
+      'Selections suit the site and maintenance responsibilities are clear.', 'medium');
+  }
+
+  return {
+    title: title + ' — Verification checklist',
+    project_type: type,
+    engine: 'swiftquote-local-test-matrix',
+    generated_at: new Date().toISOString(),
+    status: 'proposed_not_run',
+    summary: 'A locally generated test and inspection proposal for “' + title + '”. None of these checks have been performed by generating this checklist.',
+    cases,
+    execution_rules: [
+      'Run checks in a safe test environment where possible; do not use live payments or production data for experiments.',
+      'For each case, record pass, fail, blocked, or not run, plus evidence and the person who performed it.',
+      'A failed critical check blocks release until it is fixed or formally accepted by the accountable owner.',
+      'Retest affected cases after a change and run regression checks before release.',
+      'Use qualified professionals for regulated or safety-critical inspections.'
+    ],
+    exit_criteria: [
+      'All critical cases have a recorded result and evidence.',
+      'No unresolved critical failure remains without explicit, documented risk acceptance.',
+      'Open issues have owners and target dates.',
+      'The responsible owner reviews and signs off on the results.'
+    ],
+    limitation: 'This is a rules-based checklist, not an execution engine. It does not run code, inspect a physical site, verify live facts, or prove safety. A human or connected test system must perform the checks and record evidence.'
+  };
+}

@@ -170,6 +170,17 @@ test('AI project workspace is private, persists plans, and enforces account owne
   assert.equal(verification.report.engine, 'swiftquote-local-verifier');
   assert.equal(typeof verification.report.score, 'number');
   assert.ok(Array.isArray(verification.requirements.gaps));
+  const testMatrixResponse = await fetch(baseUrl + '/api/ai/test-matrix', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: JSON.stringify({ title: localPlan.project.title, type: localPlan.project.project_type, brief: localPlan.project.goal })
+  });
+  assert.equal(testMatrixResponse.status, 200);
+  const testMatrix = await testMatrixResponse.json();
+  assert.equal(testMatrix.matrix.engine, 'swiftquote-local-test-matrix');
+  assert.ok(testMatrix.matrix.cases.length >= 8);
+  assert.ok(testMatrix.matrix.cases.every(testCase => testCase.status === 'not_run'));
+
   const badPlan = structuredClone(localPlan.project);
   badPlan.workstreams[0].tasks.push({ ...badPlan.workstreams[0].tasks[0] });
   const duplicateCheck = await fetch(baseUrl + '/api/ai/verify-plan', {
