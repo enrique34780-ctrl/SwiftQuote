@@ -127,6 +127,13 @@ test('AI project workspace is private, persists plans, and enforces account owne
     body: JSON.stringify({ title: 'Test project', type: 'Software', brief: 'Build a safe project planning tool with tests.' })
   });
   assert.equal(unauthorizedGenerate.status, 401);
+  const unauthorizedVerify = await fetch(baseUrl + '/api/ai/verify-plan', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ plan: {} })
+  });
+  assert.equal(unauthorizedVerify.status, 401);
+
 
   async function createCustomer(name,email) {
     const response = await fetch(baseUrl + '/api/account/register', {
