@@ -208,7 +208,7 @@ test('AI project workspace is private, persists plans, and enforces account owne
   });
   assert.equal(remove.status, 200);
   const empty = await fetch(baseUrl + '/api/ai/projects', { headers: { cookie: owner.cookie } });
-  assert.equal((await empty.json()).projects.length, 0);
+  assert.equal((await empty.json()).projects.length, 1, 'the separately generated plan should remain saved');
 });
 
 test('invalid public provider contact data is rejected without reserving the email', async () => {
