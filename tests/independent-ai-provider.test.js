@@ -45,3 +45,33 @@ test('invalid self-hosted base URLs are not marked as configured', () => {
   assert.equal(provider.configured, false);
   assert.equal(provider.providers.compatible, false);
 });
+
+test('compatible-only mode never sends prompts to commercial providers after local failure', async () => {
+  let cloudCalls = 0;
+  const provider = createAIProvider({
+    mode: 'compatible-only',
+    openaiApiKey: 'test-key',
+    openai: { responses: { create: async () => { cloudCalls++; return { output_text: 'must not be used' }; } } },
+    geminiApiKey: 'test-gemini-key',
+    compatibleBaseUrl: 'http://127.0.0.1:11434/v1',
+    compatibleModel: 'llama3.1',
+    fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+  });
+  assert.equal(provider.mode, 'compatible-only');
+  assert.equal(provider.configured, true);
+  await assert.rejects(() => provider.generateText({ user: 'Private prompt' }), /Configured AI providers were unavailable/);
+  assert.equal(cloudCalls, 0);
+});
+
+test('compatible-only mode is not configured without a compatible endpoint even if cloud keys exist', async () => {
+  let cloudCalls = 0;
+  const provider = createAIProvider({
+    mode: 'compatible-only',
+    openaiApiKey: 'test-key',
+    openai: { responses: { create: async () => { cloudCalls++; return { output_text: 'cloud answer' }; } } },
+    geminiApiKey: 'test-gemini-key',
+  });
+  assert.equal(provider.configured, false);
+  await assert.rejects(() => provider.generateText({ user: 'Private prompt' }), /AI is not configured/);
+  assert.equal(cloudCalls, 0);
+});
