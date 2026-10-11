@@ -86,7 +86,7 @@ test('marketplace API returns service categories and showcase safely', async () 
 });
 
 test('service, provider, and showcase pages are served', async () => {
-  for (const route of ['/service.html', '/provider.html', '/showcase.html', '/blueprints.html', '/simulator.html']) {
+  for (const route of ['/service.html', '/provider.html', '/showcase.html', '/blueprints.html', '/simulator.html', '/copilot.html']) {
     const response = await fetch(baseUrl + route);
     assert.equal(response.status, 200, route + ' should load');
     assert.match(response.headers.get('content-type') || '', /text\/html/);
@@ -112,6 +112,88 @@ test('project studio config exposes only AI feature readiness and protects AI en
     body: JSON.stringify({ imageData: 'data:image/jpeg;base64,AAAA' })
   });
   assert.equal(simulation.status, 401);
+});
+
+
+test('AI project workspace is private, persists plans, and enforces account ownership', async () => {
+  const unauthenticated = await fetch(baseUrl + '/api/ai/projects');
+  assert.equal(unauthenticated.status, 401);
+  const unauthorizedGenerate = await fetch(baseUrl + '/api/ai/project-copilot', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ title: 'Test project', type: 'Software', brief: 'Build a safe project planning tool with tests.' })
+  });
+  assert.equal(unauthorizedGenerate.status, 401);
+
+  async function createCustomer(name,email) {
+    const response = await fetch(baseUrl + '/api/account/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: baseUrl },
+      body: JSON.stringify({ name, email, password: 'ValidSmokeTestPassword123!', accountType: 'customer' })
+    });
+    assert.equal(response.status, 201, await response.text());
+    const data = await response.json();
+    const cookie = (response.headers.get('set-cookie') || '').split(';')[0];
+    assert.ok(cookie);
+    assert.ok(data.csrf);
+    return { cookie, csrf: data.csrf };
+  }
+  const owner = await createCustomer('Project Owner','project-owner@example.test');
+  const other = await createCustomer('Other Customer','other-project-owner@example.test');
+  const plan = {
+    title: 'Smoke test project', project_type: 'Software', executive_summary: 'Build a safe and tested project workflow.',
+    goal: 'Create a testable, account-private project workflow.',
+    scope_included: ['Plan the feature'], scope_excluded: ['Automatic production deployment'],
+    assumptions: ['Test database is temporary'], open_questions: ['Which deployment window?'],
+    workstreams: [{ name: 'Implementation', purpose: 'Build and verify', tasks: [{ title: 'Add regression tests', description: 'Check persistence and access controls.', depends_on: [], effort: '1 day', status: 'todo' }] }],
+    milestones: [{ name: 'Tests pass', acceptance_criteria: ['Smoke tests pass'], depends_on: [] }],
+    risks: [{ risk: 'Cross-account access', severity: 'high', mitigation: 'Filter every query by account id.', owner: 'Engineering' }],
+    deliverables: [{ name: 'Project plan', acceptance_criteria: ['Plan can be retrieved by its owner'] }],
+    resources: ['Node test runner'], budget_guidance: 'No costs estimated.',
+    verification_plan: ['Run smoke tests'], next_actions: ['Review test output']
+  };
+  const create = await fetch(baseUrl + '/api/ai/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: JSON.stringify({ project: plan })
+  });
+  assert.equal(create.status, 201, await create.text());
+  const created = await create.json();
+  assert.ok(created.projectId > 0);
+
+  const list = await fetch(baseUrl + '/api/ai/projects', { headers: { cookie: owner.cookie } });
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).projects.length, 1);
+
+  const ownProject = await fetch(baseUrl + '/api/ai/projects/' + created.projectId, { headers: { cookie: owner.cookie } });
+  assert.equal(ownProject.status, 200);
+  const saved = await ownProject.json();
+  saved.project.workstreams[0].tasks[0].status = 'done';
+  const update = await fetch(baseUrl + '/api/ai/projects/' + created.projectId, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: JSON.stringify({ project: saved.project })
+  });
+  assert.equal(update.status, 200, await update.text());
+  assert.equal((await update.json()).project.workstreams[0].tasks[0].status, 'done');
+
+  const crossAccount = await fetch(baseUrl + '/api/ai/projects/' + created.projectId, { headers: { cookie: other.cookie } });
+  assert.equal(crossAccount.status, 404);
+  const crossDelete = await fetch(baseUrl + '/api/ai/projects/' + created.projectId, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: other.cookie, 'x-csrf-token': other.csrf },
+    body: JSON.stringify({})
+  });
+  assert.equal(crossDelete.status, 404);
+
+  const remove = await fetch(baseUrl + '/api/ai/projects/' + created.projectId, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: JSON.stringify({})
+  });
+  assert.equal(remove.status, 200);
+  const empty = await fetch(baseUrl + '/api/ai/projects', { headers: { cookie: owner.cookie } });
+  assert.equal((await empty.json()).projects.length, 0);
 });
 
 test('invalid public provider contact data is rejected without reserving the email', async () => {
