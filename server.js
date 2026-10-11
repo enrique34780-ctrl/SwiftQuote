@@ -888,7 +888,8 @@ app.post('/api/billing/stripe-webhook',express.raw({type:'application/json',limi
     const result=processEvent(); if(result.duplicate)return res.json({received:true,duplicate:true}); return res.json({received:true});
   }catch(e){console.error('Stripe webhook processing failed:',e.message);return res.status(500).send('Webhook processing failed');}
 });
-app.use(express.json({limit:'2mb', strict:true}));
+app.use('/api/ai/simulate-renovation',express.json({limit:'2mb',strict:true}));
+app.use(express.json({limit:'20kb', strict:true}));
 app.use(express.urlencoded({extended:false, limit:'20kb'}));
 app.use('/api',(req,res,next)=>{ noStore(res); if(!rateLimit(rateKey('api-ip',clientIp(req)),240,60_000)) return res.status(429).json({error:'API request rate limit reached. Please slow down.'}); next(); });
 app.use((req,res,next)=>{ req.setTimeout(15_000); next(); });
