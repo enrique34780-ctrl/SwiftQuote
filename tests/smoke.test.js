@@ -86,11 +86,32 @@ test('marketplace API returns service categories and showcase safely', async () 
 });
 
 test('service, provider, and showcase pages are served', async () => {
-  for (const route of ['/service.html', '/provider.html', '/showcase.html']) {
+  for (const route of ['/service.html', '/provider.html', '/showcase.html', '/blueprints.html', '/simulator.html']) {
     const response = await fetch(baseUrl + route);
     assert.equal(response.status, 200, route + ' should load');
     assert.match(response.headers.get('content-type') || '', /text\/html/);
   }
+});
+
+test('project studio config exposes only AI feature readiness and protects AI endpoints', async () => {
+  const configResponse = await fetch(baseUrl + '/api/config');
+  assert.equal(configResponse.status, 200);
+  const config = await configResponse.json();
+  assert.equal(typeof config.blueprintAIConfigured, 'boolean');
+  assert.equal(typeof config.imageSimulationConfigured, 'boolean');
+  assert.equal(Object.hasOwn(config, 'OPENAI_API_KEY'), false);
+  const blueprint = await fetch(baseUrl + '/api/ai/blueprint', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ title: 'Bathroom update', type: 'Home renovation', brief: 'Replace old tile and install a walk-in shower.' })
+  });
+  assert.equal(blueprint.status, 401);
+  const simulation = await fetch(baseUrl + '/api/ai/simulate-renovation', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ imageData: 'data:image/jpeg;base64,AAAA' })
+  });
+  assert.equal(simulation.status, 401);
 });
 
 test('invalid public provider contact data is rejected without reserving the email', async () => {
