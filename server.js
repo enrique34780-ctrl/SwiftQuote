@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { createAIProvider } from './ai-provider.js';
 
 const app = express();
@@ -17,6 +17,7 @@ const BUSINESS_NAME = process.env.BUSINESS_NAME || 'SwiftQuote';
 const SESSION_SECRET = process.env.SESSION_SECRET || (isProd ? '' : 'dev-only-change-me');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (isProd ? '' : 'change-this-before-production');
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const STRIPE_PAYMENT_LINK = process.env.STRIPE_PAYMENT_LINK || '';
@@ -887,7 +888,7 @@ app.post('/api/billing/stripe-webhook',express.raw({type:'application/json',limi
     const result=processEvent(); if(result.duplicate)return res.json({received:true,duplicate:true}); return res.json({received:true});
   }catch(e){console.error('Stripe webhook processing failed:',e.message);return res.status(500).send('Webhook processing failed');}
 });
-app.use(express.json({limit:'20kb', strict:true}));
+app.use(express.json({limit:'2mb', strict:true}));
 app.use(express.urlencoded({extended:false, limit:'20kb'}));
 app.use('/api',(req,res,next)=>{ noStore(res); if(!rateLimit(rateKey('api-ip',clientIp(req)),240,60_000)) return res.status(429).json({error:'API request rate limit reached. Please slow down.'}); next(); });
 app.use((req,res,next)=>{ req.setTimeout(15_000); next(); });
@@ -1104,7 +1105,7 @@ function processScheduledNotifications(){const now=Date.now();const rows=db.prep
 setInterval(processScheduledNotifications,60_000).unref();
 
 
-app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&STRIPE_PROVIDER_PRICE_IDS.starter)}); });
+app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:Boolean(ai.configured),imageSimulationConfigured:Boolean(openai)}); });
 
 app.post('/api/quote',requireJson,async(req,res)=>{
   noStore(res);
@@ -1327,6 +1328,80 @@ app.post('/api/account/change-password',requireAccount,requireAccountCsrf,requir
 app.post('/api/account/logout',requireAccount,requireAccountCsrf,(req,res)=>{noStore(res);const name=accountCookieName();const raw=req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${name}=`))?.slice(name.length+1);if(raw)db.prepare('DELETE FROM provider_sessions WHERE token_hash=?').run(tokenHash(raw));clearAccountCookie(res);res.json({ok:true});});
 app.get('/api/account/me',requireAccount,(req,res)=>{noStore(res);const a=req.account;const profile=a.account_type==='provider'?db.prepare('SELECT provider_kind,business_name,industry,services_json,service_area,zip_codes,description,verified,rating,jobs_completed FROM provider_profiles WHERE account_id=?').get(a.account_id):null;const subscription=a.account_type==='provider'?db.prepare('SELECT plan,status,current_period_end FROM subscriptions WHERE account_id=?').get(a.account_id):null;res.json({account:{id:a.account_id,type:a.account_type,name:a.name,email:a.email},profile,subscription});});
 app.post('/api/ai/structure-request',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{noStore(res);if(!ai.configured)return res.status(503).json({error:'AI assistance is not configured.'});if(!rateLimit(rateKey('ai-structure',req.account.account_id),20,3600000))return res.status(429).json({error:'AI request limit reached.'});const text=clean(req.body?.text,4000);if(text.length<10)return res.status(400).json({error:'Describe the service need in at least 10 characters.'});try{const out=String(await ai.generateText({system:'Convert a local-service customer description into JSON only. Never invent price, diagnosis, credentials, urgency, or facts. Use null when unknown. Keys: service, industry, urgency, summary, questions (array of short questions), suggested_timing.',user:text,maxOutputTokens:500,json:true})).trim();const parsed=JSON.parse(out);if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error('invalid');const safe={service:clean(parsed.service,120),industry:normalizeIndustry(parsed.industry||'general'),urgency:['low','normal','high'].includes(parsed.urgency)?parsed.urgency:'normal',summary:clean(parsed.summary,600),questions:Array.isArray(parsed.questions)?parsed.questions.map(x=>clean(x,160)).filter(Boolean).slice(0,8):[],suggested_timing:clean(parsed.suggested_timing,80)};recordRisk(req.account.account_id,req,'ai_structure',0,{chars:text.length});res.json({ok:true,result:safe});}catch{return res.status(502).json({error:'AI could not safely structure this request. Please enter the details manually.'});}});
+
+
+app.post('/api/ai/blueprint',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!ai.configured)return res.status(503).json({error:'AI blueprint generation is not configured yet. A server-side OpenAI or Gemini key is required.'});
+  if(!rateLimit(rateKey('ai-blueprint',req.account.account_id),12,60*60_000))return res.status(429).json({error:'Blueprint generation limit reached. Try again later.'});
+  const b=req.body||{};
+  const title=clean(b.title,120),projectType=clean(b.type,80),brief=clean(b.brief,4000),budget=clean(b.budget,100),dimensions=clean(b.dimensions,1200),style=clean(b.style,300);
+  if(title.length<2||brief.length<10)return res.status(400).json({error:'Provide a project name and at least 10 characters describing the project.'});
+  try{
+    const raw=String(await ai.generateText({
+      system:'You are a cautious project-planning assistant. Return JSON only with keys: title, project_type, overview, design_goals (array of strings), assumptions (array of strings), phases (array of objects with name and tasks array), materials (array of objects with name, quantity_estimate, unit, notes), measurements_to_confirm (array of strings), safety_and_permit_checks (array of strings), budget_notes (string), professional_review (array of strings), status. Be precise about uncertainty. Never claim zero errors, guarantee an outcome, invent local building codes or permit rules, claim current retailer inventory/prices, or present rough quantities as verified. Use "to measure" where quantities are unknown. If budget is supplied, repeat it as the user\'s stated budget rather than claiming costs fit it. State that structural, electrical, plumbing, waterproofing, fire, gas, and other regulated or safety-critical work may require qualified professional review. Identify assumptions and missing measurements. Keep phases practical and ordered. Set status to "ai_draft".',
+      user:JSON.stringify({title,project_type:projectType,brief,budget:budget||'not supplied',known_dimensions_and_constraints:dimensions||'not supplied',style_and_priorities:style||'not supplied'}),
+      maxOutputTokens:1600,json:true
+    })).trim();
+    const parsed=JSON.parse(raw);
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Error('invalid');
+    const arr=(v,max=12)=>Array.isArray(v)?v.map(x=>clean(typeof x==='object'&&x!==null?(x.name||x.text||''):x,500)).filter(Boolean).slice(0,max):[];
+    const phases=Array.isArray(parsed.phases)?parsed.phases.slice(0,12).map((p,i)=>({name:clean(p?.name,120)||'Phase '+(i+1),tasks:arr(p?.tasks,12)})).filter(p=>p.tasks.length):[];
+    const materials=Array.isArray(parsed.materials)?parsed.materials.slice(0,40).map(m=>({name:clean(m?.name,160),quantity_estimate:clean(m?.quantity_estimate,100)||'to measure',unit:clean(m?.unit,50),notes:clean(m?.notes,400)})).filter(m=>m.name):[];
+    const blueprint={
+      title:clean(parsed.title,120)||title,
+      project_type:clean(parsed.project_type,80)||projectType,
+      overview:clean(parsed.overview,1200)||'Review the project brief and confirm missing information.',
+      design_goals:arr(parsed.design_goals,12),
+      assumptions:arr(parsed.assumptions,16),
+      phases,
+      materials,
+      measurements_to_confirm:arr(parsed.measurements_to_confirm,20),
+      safety_and_permit_checks:arr(parsed.safety_and_permit_checks,20),
+      budget_notes:clean(parsed.budget_notes,1000)||'No current retailer prices or contractor quotes were verified.',
+      professional_review:arr(parsed.professional_review,16),
+      status:'ai_draft',
+      generated_at:new Date().toISOString(),
+      verification_note:'AI-generated planning draft. Verify all measurements, product specifications, current prices, permits, local codes, and safety-critical details with appropriate sources and professionals.'
+    };
+    if(!blueprint.phases.length||!blueprint.safety_and_permit_checks.length)throw Error('incomplete');
+    recordRisk(req.account.account_id,req,'ai_blueprint',0,{chars:brief.length,phaseCount:blueprint.phases.length});
+    res.json({ok:true,blueprint});
+  }catch{
+    res.status(502).json({error:'AI could not produce a valid, sufficiently complete blueprint. Try simplifying the brief or create an editable starter plan.'});
+  }
+});
+
+app.post('/api/ai/simulate-renovation',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!openai)return res.status(503).json({error:'AI image simulation is not configured. A server-side OpenAI API key is required.'});
+  if(!rateLimit(rateKey('ai-simulation',req.account.account_id),3,60*60_000))return res.status(429).json({error:'AI image simulation limit reached. Try again later.'});
+  const imageData=String(req.body?.imageData||'');
+  if(imageData.length>1_700_000)return res.status(413).json({error:'Photo is too large after compression. Use a smaller image.'});
+  const match=imageData.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/);
+  if(!match)return res.status(400).json({error:'Upload a valid JPEG, PNG, or WebP image.'});
+  const buffer=Buffer.from(match[2],'base64');
+  if(!buffer.length||buffer.length>1_250_000)return res.status(413).json({error:'Photo is too large. Use a smaller image.'});
+  const mime=match[1]==='jpeg'?'image/jpeg':'image/'+match[1];
+  const description=clean(req.body?.description,1500);
+  const targetArea=clean(req.body?.targetArea,80)||'visible area';
+  const selectedMaterial=clean(req.body?.selectedMaterial,100);
+  const products=Array.isArray(req.body?.materials)?req.body.materials.slice(0,12).map(p=>clean(p?.name,120)).filter(Boolean):[];
+  const requested=[selectedMaterial,...products].filter(Boolean).join(', ');
+  const prompt='Create a photorealistic renovation CONCEPT based on the uploaded reference photo. Preserve the room layout, camera viewpoint, windows, doors, and major fixed features as closely as possible. Change only the requested visible finishes and decor where plausible. Target area: '+targetArea+'. Desired changes: '+(description||'Apply a tasteful renovation concept to the selected area')+'. Material inspirations: '+(requested||'Use a neutral, durable contemporary finish')+'. Do not add text, labels, measurements, logos, or claims that this is an exact purchasable product. Treat this as an illustrative design concept, not an engineering drawing. If a change would require structural alterations not visible in the photo, do not imply those alterations are verified.';
+  try{
+    req.setTimeout(100_000);
+    const result=await openai.images.edit({model:OPENAI_IMAGE_MODEL,image:await toFile(buffer,'swiftquote-reference.'+(match[1]==='jpeg'?'jpg':match[1]),{type:mime}),prompt,size:'1024x1024'},{timeout:90_000,maxRetries:0});
+    const encoded=result?.data?.[0]?.b64_json;
+    if(typeof encoded!=='string'||encoded.length<100)throw Error('empty image');
+    recordRisk(req.account.account_id,req,'ai_simulation',0,{targetArea,photoBytes:buffer.length});
+    res.json({ok:true,imageBase64:encoded,model:OPENAI_IMAGE_MODEL,verificationNote:'Illustrative AI rendering. Verify dimensions, installation details, product identity, price, and availability separately.'});
+  }catch{
+    res.status(502).json({error:'AI could not create the concept image right now. Keep using the local visual overlay and try again later.'});
+  }
+});
 
 app.post('/api/marketplace/request',requireJson,(req,res)=>{noStore(res);if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});if(!rateLimit(rateKey('marketplace-request',clientIp(req)),20,3600000))return res.status(429).json({error:'Too many requests.'});const b=req.body||{};const service=clean(b.service,120),industry=normalizeIndustry(b.industry||service),details=clean(b.details,2000),address=clean(b.address,180),zip=normalizeZip(b.zip),timing=clean(b.timing,60);if(!service||details.length<10||!address||zip.length<5||!timing)return res.status(400).json({error:'Service, details, address, ZIP, and timing are required.'});const session=readProviderSession(req);const customerId=session?.account_type==='customer'?session.account_id:null;const r=db.prepare('INSERT INTO marketplace_requests(customer_account_id,service,industry,details,address,zip_code,timing,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(customerId,service,industry,details,address,zip,timing,'new',Date.now());const requestId=Number(r.lastInsertRowid);const est=Object.hasOwn(rates,service)?estimate(service,b.jobSize||'medium'):null;const lead=db.prepare('INSERT INTO leads(created_at,name,phone,email,service,job_size,timing,address,details,estimate_min,estimate_max,ai_summary,ai_priority,status,source,industry,source_lead_id,source_url,lead_score,next_action,estimated_value,zip_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(new Date().toISOString(),clean(b.name||'Marketplace Customer',100),clean(b.phone||'Not provided',40),validEmail(b.email)?clean(b.email,160):'not-provided@example.invalid',service,clean(b.jobSize||'medium',20),timing,address,details,est?.min||0,est?.max||0,'','normal','new','marketplace',industry,`marketplace:${requestId}`,null,scoreLead({phone:b.phone,email:b.email,details,timing,estimateMax:est?.max||0}),nextActionFor(scoreLead({phone:b.phone,email:b.email,details,timing,estimateMax:est?.max||0}),timing),est?.max||0,zip);const leadId=Number(lead.lastInsertRowid);if(customerId)db.prepare('UPDATE leads SET customer_account_id=? WHERE id=?').run(customerId,leadId);createMatchesForLead(leadId);res.status(201).json({ok:true,requestId,leadId,estimate:est});});
 app.get('/api/provider/leads',requireProvider,(req,res)=>{noStore(res);if(!providerCanReceive(req.account.account_id))return res.status(402).json({error:'Active subscription required to receive leads.'});const rows=db.prepare("SELECT l.id,l.created_at,l.service,l.industry,l.job_size,l.timing,l.details,l.address,l.lead_score,l.next_action,l.estimated_value,m.match_score,m.status match_status FROM lead_matches m JOIN leads l ON l.id=m.lead_id WHERE m.provider_account_id=? AND m.status IN ('offered','claimed') ORDER BY m.match_score DESC,m.created_at DESC LIMIT 100").all(req.account.account_id);res.json({leads:rows.map(r=>({...r,match_reasons:matchReasons(r,db.prepare('SELECT a.id account_id,p.* FROM accounts a JOIN provider_profiles p ON p.account_id=a.id WHERE a.id=?').get(req.account.account_id)),trust:refreshProviderMetrics(req.account.account_id)}))});});
