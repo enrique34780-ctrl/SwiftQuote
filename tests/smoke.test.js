@@ -153,6 +153,26 @@ test('AI project workspace is private, persists plans, and enforces account owne
   assert.ok(localPlan.projectId > 0);
   assert.ok(localPlan.project.workstreams.length >= 3);
   assert.ok(localPlan.project.verification_plan.length > 0);
+  const verifyPlanResponse = await fetch(baseUrl + '/api/ai/verify-plan', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: JSON.stringify({ plan: localPlan.project, brief: localPlan.project.goal })
+  });
+  assert.equal(verifyPlanResponse.status, 200);
+  const verification = await verifyPlanResponse.json();
+  assert.equal(verification.report.engine, 'swiftquote-local-verifier');
+  assert.equal(typeof verification.report.score, 'number');
+  assert.ok(Array.isArray(verification.requirements.gaps));
+  const badPlan = structuredClone(localPlan.project);
+  badPlan.workstreams[0].tasks.push({ ...badPlan.workstreams[0].tasks[0] });
+  const duplicateCheck = await fetch(baseUrl + '/api/ai/verify-plan', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: JSON.stringify({ plan: badPlan, brief: localPlan.project.goal })
+  });
+  assert.equal(duplicateCheck.status, 200);
+  assert.ok((await duplicateCheck.json()).report.errors.some(issue => issue.code === 'duplicate-task'));
+
   assert.match(localPlan.project.safety_note, /no external model|verify/i);
 
   const plan = {
