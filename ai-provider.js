@@ -1,39 +1,81 @@
 /**
- * Optional OpenAI/Gemini text provider with bounded timeouts and server-side keys.
- * OpenAI is preferred when configured; Gemini is a fallback or standalone option.
+ * SwiftQuote AI provider router.
+ * Supports OpenAI, Gemini, and any OpenAI-compatible endpoint (including Ollama).
+ * All credentials remain server-side. Provider output is untrusted input and must
+ * be validated by the feature that consumes it.
  */
+function boundedText(value, max) {
+  return String(value ?? '').slice(0, max);
+}
+
+function normalizeBaseUrl(value) {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return '';
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+
 export function createAIProvider({
   openai = null,
   openaiApiKey = '',
   openaiModel = 'gpt-4.1-mini',
   geminiApiKey = '',
   geminiModel = 'gemini-3.8-flash',
+  compatibleBaseUrl = '',
+  compatibleApiKey = '',
+  compatibleModel = 'llama3.1',
   fetchImpl = globalThis.fetch,
-  timeoutMs = 8_000,
+  timeoutMs = 12_000,
 } = {}) {
   const hasOpenAI = Boolean(openai && openaiApiKey);
   const hasGemini = Boolean(geminiApiKey);
+  const baseUrl = normalizeBaseUrl(compatibleBaseUrl);
+  const hasCompatible = Boolean(baseUrl && compatibleModel);
+  const configured = hasOpenAI || hasGemini || hasCompatible;
+
+  async function fetchWithDeadline(url, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(url, { ...options, signal: controller.signal, redirect: 'error' });
+      // The timeout remains active while the response body is read.
+      return { response, clear: () => clearTimeout(timer) };
+    } catch (error) {
+      clearTimeout(timer);
+      throw error;
+    }
+  }
+
   return {
-    configured: hasOpenAI || hasGemini,
-    providers: { openai: hasOpenAI, gemini: hasGemini },
-    async generateText({ system, user, maxOutputTokens = 256, json = false }) {
-      const prompts = {
-        system: String(system ?? '').slice(0, 12_000),
-        user: String(user ?? '').slice(0, 12_000),
-      };
-      const maxTokens = Math.max(32, Math.min(2_000, Math.trunc(Number(maxOutputTokens) || 256)));
+    configured,
+    providers: { openai: hasOpenAI, gemini: hasGemini, compatible: hasCompatible },
+    async generateText({ system, user, messages = null, maxOutputTokens = 512, json = false } = {}) {
+      const systemPrompt = boundedText(system, 12_000);
+      const userPrompt = boundedText(user, 12_000);
+      const safeMessages = Array.isArray(messages)
+        ? messages.slice(-12).map(item => ({
+            role: item?.role === 'assistant' ? 'assistant' : 'user',
+            content: boundedText(item?.content, 4_000),
+          })).filter(item => item.content.trim())
+        : [{ role: 'user', content: userPrompt }];
+      const maxTokens = Math.max(32, Math.min(3_000, Math.trunc(Number(maxOutputTokens) || 512)));
       const failures = [];
 
       if (hasOpenAI) {
         try {
+          const input = [
+            ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+            ...safeMessages,
+          ];
           const result = await openai.responses.create({
             model: openaiModel,
             store: false,
             max_output_tokens: maxTokens,
-            input: [
-              { role: 'system', content: prompts.system },
-              { role: 'user', content: prompts.user },
-            ],
+            input,
             ...(json ? { text: { format: { type: 'json_object' } } } : {}),
           });
           const output = String(result?.output_text ?? '').trim();
@@ -46,41 +88,68 @@ export function createAIProvider({
 
       if (hasGemini) {
         try {
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), timeoutMs);
-          try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
-            const response = await fetchImpl(url, {
+          const { response, clear } = await fetchWithDeadline(
+            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`,
+            {
               method: 'POST',
               headers: { 'content-type': 'application/json', 'x-goog-api-key': geminiApiKey },
               body: JSON.stringify({
-                systemInstruction: { parts: [{ text: prompts.system }] },
-                contents: [{ role: 'user', parts: [{ text: prompts.user }] }],
+                ...(systemPrompt ? { systemInstruction: { parts: [{ text: systemPrompt }] } } : {}),
+                contents: safeMessages.map(item => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })),
                 generationConfig: {
                   maxOutputTokens: maxTokens,
                   ...(json ? { responseMimeType: 'application/json' } : {}),
                 },
               }),
-              signal: controller.signal,
-              redirect: 'error',
-            });
-            if (!response?.ok) throw new Error('Gemini request failed');
-            // Keep the deadline active while reading the response body too.
+            },
+          );
+          try {
+            if (!response.ok) throw new Error('Gemini request failed');
             const data = await response.json();
             const output = Array.isArray(data?.candidates?.[0]?.content?.parts)
               ? data.candidates[0].content.parts.map(part => typeof part?.text === 'string' ? part.text : '').join('').trim()
               : '';
             if (output) return output;
             failures.push('Gemini returned empty output');
-          } finally {
-            clearTimeout(timer);
-          }
+          } finally { clear(); }
         } catch {
           failures.push('Gemini request failed');
         }
       }
 
-      if (!this.configured) throw new Error('AI is not configured');
+      if (hasCompatible) {
+        try {
+          const endpoint = /\/v1$/i.test(baseUrl) ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
+          const headers = { 'content-type': 'application/json' };
+          if (compatibleApiKey) headers.authorization = `Bearer ${compatibleApiKey}`;
+          const { response, clear } = await fetchWithDeadline(endpoint, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model: compatibleModel,
+              messages: [
+                ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+                ...safeMessages,
+              ],
+              max_tokens: maxTokens,
+              temperature: 0.2,
+              ...(json ? { response_format: { type: 'json_object' } } : {}),
+              stream: false,
+            }),
+          });
+          try {
+            if (!response.ok) throw new Error('Compatible AI request failed');
+            const data = await response.json();
+            const output = String(data?.choices?.[0]?.message?.content ?? '').trim();
+            if (output) return output;
+            failures.push('Compatible AI returned empty output');
+          } finally { clear(); }
+        } catch {
+          failures.push('Compatible AI request failed');
+        }
+      }
+
+      if (!configured) throw new Error('AI is not configured');
       throw new Error(failures.length ? 'Configured AI providers were unavailable' : 'AI request failed');
     },
   };
