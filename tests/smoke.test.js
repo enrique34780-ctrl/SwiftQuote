@@ -98,6 +98,9 @@ test('project studio config exposes only AI feature readiness and protects AI en
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
   assert.equal(typeof config.blueprintAIConfigured, 'boolean');
+  assert.equal(config.blueprintAIConfigured, true);
+  assert.equal(config.localPlanningEngineAvailable, true);
+  assert.equal(typeof config.externalAIConfigured, 'boolean');
   assert.equal(typeof config.imageSimulationConfigured, 'boolean');
   assert.equal(Object.hasOwn(config, 'OPENAI_API_KEY'), false);
   const blueprint = await fetch(baseUrl + '/api/ai/blueprint', {
@@ -140,6 +143,18 @@ test('AI project workspace is private, persists plans, and enforces account owne
   }
   const owner = await createCustomer('Project Owner','project-owner@example.test');
   const other = await createCustomer('Other Customer','other-project-owner@example.test');
+  const localGenerate = await fetch(baseUrl + '/api/ai/project-copilot', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie: owner.cookie, 'x-csrf-token': owner.csrf },
+    body: JSON.stringify({ title: 'Bathroom renovation plan', type: 'Home renovation / construction', brief: 'Replace the old bathroom tile and plan a safer walk-in shower with verified measurements and a realistic budget.', constraints: 'Keep the existing bathroom footprint.', budget: '$8,000-$12,000' })
+  });
+  assert.equal(localGenerate.status, 201, 'local project planning should work without external AI keys');
+  const localPlan = await localGenerate.json();
+  assert.ok(localPlan.projectId > 0);
+  assert.ok(localPlan.project.workstreams.length >= 3);
+  assert.ok(localPlan.project.verification_plan.length > 0);
+  assert.match(localPlan.project.safety_note, /no external model|verify/i);
+
   const plan = {
     title: 'Smoke test project', project_type: 'Software', executive_summary: 'Build a safe and tested project workflow.',
     goal: 'Create a testable, account-private project workflow.',
