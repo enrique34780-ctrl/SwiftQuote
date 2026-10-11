@@ -1,4 +1,4 @@
-const $=s=>document.querySelector(s);let activeProject=null;let csrf=sessionStorage.getItem('sq_csrf')||'';
+const $=s=>document.querySelector(s);let activeProject=null;let activeTestMatrix=null;let csrf=sessionStorage.getItem('sq_csrf')||'';
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 async function api(url,opts={}){const headers={accept:'application/json',...(opts.headers||{})};if(opts.body){headers['content-type']='application/json';headers['x-csrf-token']=csrf;}const r=await fetch(url,{...opts,headers,credentials:'same-origin'});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||'Request failed.');return data;}
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=String(text);return n;}
@@ -25,6 +25,28 @@ function renderVerification(report,requirements){
  section.append(el('p','meta',report.limitations||'Checks detect common structural problems, not all factual or reasoning errors.'));
  $('#projectDetails').append(section);
 }
+function renderTestMatrix(matrix){
+ activeTestMatrix=matrix;
+ const section=el('section','copilot-section');
+ section.append(el('h3','',matrix.title||'Test checklist'));
+ section.append(el('p','',matrix.summary||'Review the proposed checks and perform them separately.'));
+ const list=el('div','copilot-task-list');
+ (matrix.cases||[]).forEach(testCase=>{
+  const card=el('article','copilot-task');
+  card.append(el('div','copilot-task-heading',testCase.id+' · '+testCase.name));
+  card.append(el('p','meta','Area: '+testCase.area+' · Priority: '+String(testCase.priority||'medium').toUpperCase()));
+  card.append(el('p','', 'Steps: '+testCase.steps));
+  card.append(el('p','', 'Expected result: '+testCase.expected));
+  card.append(el('p','meta','Suggested reviewer: '+testCase.reviewer));
+  card.append(el('p','meta','Status: NOT RUN — this checklist has not executed any tests.'));
+  list.append(card);
+ });
+ section.append(list);
+ addList(section,'Execution rules',matrix.execution_rules);
+ addList(section,'Exit criteria',matrix.exit_criteria);
+ section.append(el('p','meta',matrix.limitation||'Human review and evidence are required.'));
+ $('#projectDetails').append(section);
+}
 $('#verifyProjectPlan').addEventListener('click',async()=>{
  if(!activeProject?.project){$('#copilotStatus').textContent='Generate or open a plan before running checks.';return;}
  const button=$('#verifyProjectPlan');button.disabled=true;button.textContent='Checking…';
@@ -36,5 +58,17 @@ $('#verifyProjectPlan').addEventListener('click',async()=>{
  }catch(e){$('#copilotStatus').textContent=e.message;}
  finally{button.disabled=false;button.textContent='Run plan checks';}
 });
+$('#generateTestMatrix').addEventListener('click',async()=>{
+ if(!activeProject?.project){$('#copilotStatus').textContent='Generate or open a project plan before creating a test checklist.';return;}
+ const button=$('#generateTestMatrix');button.disabled=true;button.textContent='Generating…';
+ try{
+  const p=activeProject.project;
+  const data=await api('/api/ai/test-matrix',{method:'POST',body:JSON.stringify({title:p.title||'Project',type:p.project_type||'Other',brief:p.goal||p.executive_summary||'Project needs verification and acceptance checks.'})});
+  $('#projectDetails').querySelectorAll('.copilot-section').forEach(node=>{if(node.querySelector('h3')?.textContent?.includes('Verification checklist'))node.remove();});
+  renderTestMatrix(data.matrix);
+  $('#copilotStatus').textContent='Test checklist generated locally. Every case is marked NOT RUN until someone performs it and records evidence.';
+ }catch(e){$('#copilotStatus').textContent=e.message;}
+ finally{button.disabled=false;button.textContent='Generate test checklist';}
+});
 $('#refreshProjects').addEventListener('click',loadSaved);$('#saveProjectChanges').addEventListener('click',async()=>{if(!activeProject?.projectId){$('#copilotStatus').textContent='Generate a plan first; new plans are saved automatically.';return;}const button=$('#saveProjectChanges');button.disabled=true;button.textContent='Saving…';try{const data=await api('/api/ai/projects/'+encodeURIComponent(activeProject.projectId),{method:'PUT',body:JSON.stringify({project:activeProject.project})});activeProject.project=data.project;$('#copilotStatus').textContent='Task progress and plan updates saved to your account.';await loadSaved();}catch(e){$('#copilotStatus').textContent=e.message;}finally{button.disabled=false;button.textContent='Save task progress';}});
-$('#downloadProject').addEventListener('click',()=>{if(!activeProject)return;const blob=new Blob([JSON.stringify(activeProject.project,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=el('a');a.href=url;a.download=(String(activeProject.project.title||'swiftquote-project').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'swiftquote-project')+'.json';a.click();URL.revokeObjectURL(url);});$('#printProject').addEventListener('click',()=>window.print());loadSaved();
+$('#downloadProject').addEventListener('click',()=>{if(!activeProject)return;const blob=new Blob([JSON.stringify(activeTestMatrix?{...activeProject.project,test_matrix:activeTestMatrix}:activeProject.project,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=el('a');a.href=url;a.download=(String(activeProject.project.title||'swiftquote-project').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'swiftquote-project')+'.json';a.click();URL.revokeObjectURL(url);});$('#printProject').addEventListener('click',()=>window.print());loadSaved();
