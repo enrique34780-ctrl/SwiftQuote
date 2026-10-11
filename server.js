@@ -14,8 +14,8 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) { console.error('Invali
 const isProd = process.env.NODE_ENV === 'production';
 const APP_NAME = process.env.APP_NAME || 'SwiftQuote';
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'SwiftQuote';
-const SESSION_SECRET = process.env.SESSION_SECRET || 'i-am-the-chosen-one-of-the-world.';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Ramirez123!!';
+const SESSION_SECRET = process.env.SESSION_SECRET || (isProd ? '' : 'dev-only-change-me');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (isProd ? '' : 'change-this-before-production');
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
@@ -47,11 +47,11 @@ const ai = createAIProvider({
   geminiApiKey: GEMINI_API_KEY, geminiModel: GEMINI_MODEL,
 });
 
-if (isProd && (!strongSecret(SESSION_SECRET) || SESSION_SECRET === 'dev-only-change-me')) {
+if (isProd && (!strongSecret(SESSION_SECRET) || ['dev-only-change-me','i-am-the-chosen-one-of-the-world.'].includes(SESSION_SECRET))) {
   console.error('Refusing production startup: SESSION_SECRET must be a strong random secret of at least 32 characters.');
   process.exit(1);
 }
-if (isProd && (!ADMIN_PASSWORD || ADMIN_PASSWORD === 'change-this-before-production' || ADMIN_PASSWORD.length < 12)) {
+if (isProd && (!ADMIN_PASSWORD || ['change-this-before-production','Ramirez123!!'].includes(ADMIN_PASSWORD) || ADMIN_PASSWORD.length < 12)) {
   console.error('Refusing production startup: ADMIN_PASSWORD must be at least 12 characters and non-default.');
   process.exit(1);
 }
@@ -1266,7 +1266,41 @@ app.get('/api/marketplace/services',(req,res)=>{noStore(res);const services=db.p
 app.get('/api/marketplace/providers',(req,res)=>{noStore(res);const industry=normalizeIndustry(req.query.industry);const zip=normalizeZip(req.query.zip);const rows=db.prepare("SELECT a.id,p.provider_kind,p.business_name,p.industry,p.service_area,p.description,p.public_email,p.public_phone,p.website,p.verified,p.rating,p.jobs_completed,p.services_json,p.zip_codes FROM accounts a JOIN provider_profiles p ON p.account_id=a.id JOIN subscriptions s ON s.account_id=a.id WHERE a.account_type='provider' AND a.status='active' AND s.status='active' AND (s.current_period_end IS NULL OR s.current_period_end>?)").all(Date.now());const providers=rows.filter(p=>(industry==='general'||p.industry==='general'||p.industry===industry)&&(!zip||p.zip_codes.split(/[ ,]+/).map(normalizeZip).includes(zip)||(!zip?true:!!db.prepare('SELECT 1 FROM provider_service_areas WHERE provider_account_id=? AND zip_code=?').get(p.id,zip)))).slice(0,50).map(p=>{const m=providerReliability(p.id);const {zip_codes,services_json,...safe}=p;return {...safe,services:safeJson(services_json),reliability_score:m.reliabilityScore,response_rate:m.responseRate,completion_rate:m.completionRate};});res.json({providers});});
 app.get('/api/marketplace/providers/:id',(req,res)=>{noStore(res);const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid provider id.'});const p=db.prepare(`SELECT a.id,p.provider_kind,p.business_name,p.industry,p.service_area,p.description,p.public_email,p.public_phone,p.website,p.verified,p.rating,p.jobs_completed,p.services_json,p.zip_codes FROM accounts a JOIN provider_profiles p ON p.account_id=a.id JOIN subscriptions s ON s.account_id=a.id WHERE a.id=? AND a.account_type='provider' AND a.status='active' AND s.status='active' AND (s.current_period_end IS NULL OR s.current_period_end>?)`).get(id,Date.now());if(!p)return res.status(404).json({error:'Provider not found.'});const m=providerReliability(id);const {zip_codes,services_json,...safe}=p;const configuredAreas=db.prepare('SELECT zip_code,radius_miles,emergency_available FROM provider_service_areas WHERE provider_account_id=? ORDER BY zip_code').all(id);res.json({provider:{...safe,services:safeJson(services_json),serviceAreas:configuredAreas.length?configuredAreas:zip_codes.split(/[ ,]+/).map(normalizeZip).filter(Boolean).map(zip_code=>({zip_code,radius_miles:0,emergency_available:0}))},trust:m});});
 
-app.post('/api/account/register',requireJson,(req,res)=>{noStore(res);if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});if(!rateLimit(rateKey('register',clientIp(req)),10,3600000))return res.status(429).json({error:'Too many registration attempts.'});const b=req.body||{};const name=clean(b.name,100),email=clean(b.email,160).toLowerCase(),password=String(b.password||'');const type=clean(b.accountType,20).toLowerCase();if(name.length<2||!validEmail(email)||password.length<12||password.length>200||!['customer','provider'].includes(type))return res.status(400).json({error:'Provide a valid name, email, 12+ character password, and account type.'});try{const now=Date.now();const r=db.prepare('INSERT INTO accounts(account_type,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run(type,name,email,hashPassword(password),now);const id=Number(r.lastInsertRowid);if(type==='provider'){const kind=['individual','contractor','company'].includes(b.providerKind)?b.providerKind:'individual';const services=Array.isArray(b.services)?b.services.map(x=>clean(x,80)).filter(Boolean).slice(0,30):[];const publicEmail=clean(b.publicEmail,160).toLowerCase();const publicPhone=clean(b.publicPhone,40);const website=validHttpsUrl(clean(b.website,300));if(publicEmail&&!validEmail(publicEmail))return res.status(400).json({error:'Public contact email is invalid.'});db.prepare('INSERT INTO provider_profiles(account_id,provider_kind,business_name,industry,services_json,service_area,zip_codes,description,public_email,public_phone,website) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,kind,clean(b.businessName||name,120),normalizeIndustry(b.industry),JSON.stringify(services),clean(b.serviceArea,200),clean(b.zipCodes,300),clean(b.description,1000),publicEmail,publicPhone,website);const chosenPlan=Object.hasOwn(providerPlans,clean(b.plan,20))?clean(b.plan,20):'starter';db.prepare('INSERT INTO subscriptions(account_id,plan,status,current_period_end,created_at,updated_at) VALUES(?,?,?,?,?,?)').run(id,chosenPlan,'payment_required',null,now,now);}const session=providerSession(id);audit(id,'account','account_created','account',id,{accountType:type});setAccountCookie(res,session.token);res.status(201).json({ok:true,accountId:id,accountType:type,csrf:session.csrf,subscription:type==='provider'?'payment_required':'free'});}catch(e){if(String(e.message).includes('UNIQUE'))return res.status(409).json({error:'An account with that email already exists.'});throw e;}});
+app.post('/api/account/register',requireJson,(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!rateLimit(rateKey('register',clientIp(req)),10,3600000))return res.status(429).json({error:'Too many registration attempts.'});
+  const b=req.body||{};
+  const name=clean(b.name,100),email=clean(b.email,160).toLowerCase(),password=String(b.password||'');
+  const type=clean(b.accountType,20).toLowerCase();
+  if(name.length<2||!validEmail(email)||password.length<12||password.length>200||!['customer','provider'].includes(type))return res.status(400).json({error:'Provide a valid name, email, 12+ character password, and account type.'});
+  let profile={};
+  if(type==='provider'){
+    const publicEmail=clean(b.publicEmail,160).toLowerCase(),rawWebsite=clean(b.website,300),website=validHttpsUrl(rawWebsite);
+    if(publicEmail&&!validEmail(publicEmail))return res.status(400).json({error:'Public contact email is invalid.'});
+    if(rawWebsite&&!website)return res.status(400).json({error:'Website must be a valid HTTPS URL without credentials or a fragment.'});
+    profile={kind:['individual','contractor','company'].includes(b.providerKind)?b.providerKind:'individual',services:Array.isArray(b.services)?b.services.map(x=>clean(x,80)).filter(Boolean).slice(0,30):[],publicEmail,publicPhone:clean(b.publicPhone,40),website,businessName:clean(b.businessName||name,120),industry:normalizeIndustry(b.industry),serviceArea:clean(b.serviceArea,200),zipCodes:clean(b.zipCodes,300),description:clean(b.description,1000),chosenPlan:Object.hasOwn(providerPlans,clean(b.plan,20))?clean(b.plan,20):'starter'};
+  }
+  try{
+    const result=db.transaction(()=>{
+      const now=Date.now();
+      const account=db.prepare('INSERT INTO accounts(account_type,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run(type,name,email,hashPassword(password),now);
+      const id=Number(account.lastInsertRowid);
+      if(type==='provider'){
+        db.prepare('INSERT INTO provider_profiles(account_id,provider_kind,business_name,industry,services_json,service_area,zip_codes,description,public_email,public_phone,website) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,profile.kind,profile.businessName,profile.industry,JSON.stringify(profile.services),profile.serviceArea,profile.zipCodes,profile.description,profile.publicEmail,profile.publicPhone,profile.website);
+        db.prepare('INSERT INTO subscriptions(account_id,plan,status,current_period_end,created_at,updated_at) VALUES(?,?,?,?,?,?)').run(id,profile.chosenPlan,'payment_required',null,now,now);
+      }
+      const session=providerSession(id);
+      audit(id,'account','account_created','account',id,{accountType:type});
+      return {id,session};
+    })();
+    setAccountCookie(res,result.session.token);
+    res.status(201).json({ok:true,accountId:result.id,accountType:type,csrf:result.session.csrf,subscription:type==='provider'?'payment_required':'free'});
+  }catch(e){
+    if(String(e.message).includes('UNIQUE'))return res.status(409).json({error:'An account with that email already exists.'});
+    throw e;
+  }
+});
 app.post('/api/account/login',requireJson,(req,res)=>{noStore(res);if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});const email=clean(req.body?.email,160).toLowerCase(),password=String(req.body?.password||'');if(!rateLimit(rateKey('login',clientIp(req)),15,900000)||(!email||!rateLimit(rateKey('login-email',email),8,900000)))return res.status(429).json({error:'Too many login attempts.'});const a=db.prepare('SELECT * FROM accounts WHERE email=?').get(email);if(!a||!verifyPassword(password,a.password_hash))return res.status(401).json({error:'Invalid email or password.'});const session=providerSession(a.id);audit(a.id,'account','login','account',a.id);setAccountCookie(res,session.token);res.json({ok:true,accountId:a.id,accountType:a.account_type,csrf:session.csrf,subscription:a.account_type==='provider'?(db.prepare('SELECT status,plan,current_period_end FROM subscriptions WHERE account_id=?').get(a.id)||{status:'payment_required'}):'free'});});
 app.post('/api/account/change-password',requireAccount,requireAccountCsrf,requireJson,(req,res)=>{noStore(res);return withIdempotency(req,res,'change-password',()=>{const current=String(req.body?.currentPassword||''),next=String(req.body?.newPassword||'');if(current.length<12||next.length<12||next.length>200)return res.status(400).json({error:'Passwords must be 12 to 200 characters.'});const a=db.prepare('SELECT password_hash FROM accounts WHERE id=?').get(req.account.account_id);if(!a||!verifyPassword(current,a.password_hash))return res.status(401).json({error:'Current password is incorrect.'});if(current===next)return res.status(400).json({error:'New password must be different.'});db.prepare('UPDATE accounts SET password_hash=? WHERE id=?').run(hashPassword(next),req.account.account_id);const cookieName=accountCookieName();const raw=req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${cookieName}=`))?.slice(cookieName.length+1)||'';const currentHash=raw?tokenHash(raw):'';if(currentHash)db.prepare('DELETE FROM provider_sessions WHERE account_id=? AND token_hash<>?').run(req.account.account_id,currentHash);else db.prepare('DELETE FROM provider_sessions WHERE account_id=?').run(req.account.account_id);audit(req.account.account_id,'account','password_changed','account',req.account.account_id);res.json({ok:true});});});
 app.post('/api/account/logout',requireAccount,requireAccountCsrf,(req,res)=>{noStore(res);const name=accountCookieName();const raw=req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${name}=`))?.slice(name.length+1);if(raw)db.prepare('DELETE FROM provider_sessions WHERE token_hash=?').run(tokenHash(raw));clearAccountCookie(res);res.json({ok:true});});
