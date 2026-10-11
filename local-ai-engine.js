@@ -269,3 +269,141 @@ export function buildLocalBlueprint(input = {}) {
     verification_note:'Generated locally by rules and templates; no OpenAI/Gemini API was called. This is an editable planning draft, not a stamped drawing, inspected site plan, verified quote, or guarantee.'
   };
 }
+
+
+/**
+ * Deterministic quality gates for local plans.
+ * Reports issues and recommendations; never claims semantic correctness.
+ */
+export function validateLocalPlan(plan = {}) {
+  const errors = [];
+  const warnings = [];
+  const recommendations = [];
+  const add = (bucket, code, message, path = '') => bucket.push({ code, message, path });
+  const text = value => String(value ?? '').trim();
+  const arr = value => Array.isArray(value) ? value : [];
+  const normalize = value => text(value).toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const workstreams = arr(plan.workstreams);
+  const milestones = arr(plan.milestones);
+  const risks = arr(plan.risks);
+  const deliverables = arr(plan.deliverables);
+  const tasks = [];
+  const taskNames = new Map();
+
+  if (!text(plan.title)) add(errors, 'missing-title', 'Add a project title.', 'title');
+  if (!text(plan.goal)) add(errors, 'missing-goal', 'Describe the intended outcome.', 'goal');
+  if (!workstreams.length) add(errors, 'missing-workstreams', 'Add at least one workstream with actionable tasks.', 'workstreams');
+  if (!milestones.length) add(warnings, 'missing-milestones', 'Add milestones so progress can be reviewed.', 'milestones');
+  if (!arr(plan.open_questions).length) add(warnings, 'no-open-questions', 'Confirm that missing requirements were considered.', 'open_questions');
+  if (!arr(plan.assumptions).length) add(warnings, 'no-assumptions', 'List assumptions and facts that have not been verified.', 'assumptions');
+  if (!arr(plan.verification_plan).length) add(errors, 'missing-verification', 'Add a verification plan before treating the project as ready.', 'verification_plan');
+  if (!risks.length) add(warnings, 'missing-risks', 'Add project-specific risks and mitigations.', 'risks');
+  if (!deliverables.length) add(warnings, 'missing-deliverables', 'Define outputs and acceptance criteria.', 'deliverables');
+
+  workstreams.forEach((stream, wi) => {
+    if (!text(stream?.name)) add(errors, 'missing-workstream-name', 'Name this workstream.', `workstreams[${wi}].name`);
+    const streamTasks = arr(stream?.tasks);
+    if (!streamTasks.length) add(warnings, 'empty-workstream', 'This workstream has no tasks.', `workstreams[${wi}].tasks`);
+    streamTasks.forEach((taskItem, ti) => {
+      const path = `workstreams[${wi}].tasks[${ti}]`;
+      const name = text(taskItem?.title);
+      if (!name) add(errors, 'missing-task-title', 'Give each task a title.', path + '.title');
+      if (!text(taskItem?.description)) add(warnings, 'missing-task-detail', 'Add an actionable description and expected result.', path + '.description');
+      const key = normalize(name);
+      if (key) {
+        if (taskNames.has(key)) add(errors, 'duplicate-task', 'Task title duplicates another task; use unique names so dependencies are unambiguous.', path + '.title');
+        else taskNames.set(key, path);
+      }
+      tasks.push({ item: taskItem, path, key, deps: arr(taskItem?.depends_on).map(normalize).filter(Boolean) });
+    });
+  });
+
+  const graph = new Map(tasks.map(t => [t.key, t.deps]));
+  tasks.forEach(t => t.deps.forEach(dep => {
+    if (!graph.has(dep)) add(errors, 'unknown-task-dependency', `Dependency “${dep}” does not match any task title.`, t.path + '.depends_on');
+    if (dep === t.key) add(errors, 'self-dependency', 'A task cannot depend on itself.', t.path + '.depends_on');
+  }));
+  const visiting = new Set(), visited = new Set();
+  function visit(key, chain = []) {
+    if (visiting.has(key)) {
+      add(errors, 'dependency-cycle', 'Circular task dependencies detected: ' + [...chain, key].join(' → '), 'workstreams');
+      return;
+    }
+    if (visited.has(key)) return;
+    visiting.add(key);
+    for (const dep of graph.get(key) || []) if (graph.has(dep)) visit(dep, [...chain, key]);
+    visiting.delete(key); visited.add(key);
+  }
+  for (const key of graph.keys()) visit(key);
+
+  const milestoneNames = new Set();
+  milestones.forEach((m, i) => {
+    const key = normalize(m?.name);
+    if (!key) add(errors, 'missing-milestone-name', 'Name each milestone.', `milestones[${i}].name`);
+    if (key && milestoneNames.has(key)) add(errors, 'duplicate-milestone', 'Milestone names should be unique.', `milestones[${i}].name`);
+    milestoneNames.add(key);
+    if (!arr(m?.acceptance_criteria).length) add(warnings, 'milestone-no-criteria', 'Add observable pass/fail acceptance criteria.', `milestones[${i}].acceptance_criteria`);
+    arr(m?.depends_on).forEach((dep, j) => {
+      if (!milestoneNames.has(normalize(dep)) && !milestones.some(other => normalize(other?.name) === normalize(dep))) {
+        add(warnings, 'unknown-milestone-dependency', 'Check that this milestone dependency exists.', `milestones[${i}].depends_on[${j}]`);
+      }
+    });
+  });
+  risks.forEach((risk, i) => {
+    if (!text(risk?.risk)) add(warnings, 'unnamed-risk', 'Describe the risk.', `risks[${i}].risk`);
+    if (!text(risk?.mitigation)) add(warnings, 'risk-no-mitigation', 'Add a practical mitigation and owner.', `risks[${i}].mitigation`);
+    if (!['low','medium','high','critical'].includes(text(risk?.severity).toLowerCase())) add(warnings, 'risk-severity', 'Choose low, medium, high, or critical severity.', `risks[${i}].severity`);
+  });
+  deliverables.forEach((d, i) => {
+    if (!text(d?.name)) add(warnings, 'unnamed-deliverable', 'Name the deliverable.', `deliverables[${i}].name`);
+    if (!arr(d?.acceptance_criteria).length) add(warnings, 'deliverable-no-criteria', 'Add a way to verify this deliverable.', `deliverables[${i}].acceptance_criteria`);
+  });
+
+  const allText = JSON.stringify(plan).toLowerCase();
+  const hazardous = [
+    [/\bguaranteed?\s+(?:correct|safe|error[- ]free|perfect)\b|\bzero\s+(?:bugs|mistakes|errors)\b/, 'unsupported-guarantee', 'Remove guarantees of perfection or error-free results; report what was actually checked.'],
+    [/\b(?:live|current)\s+(?:inventory|stock|prices?)\s+(?:verified|confirmed)\b/, 'unverified-live-claim', 'Only claim live prices or inventory when a trusted current source was actually queried.'],
+    [/\b(?:permit|code)\s+(?:approved|compliant|confirmed)\b/, 'unverified-compliance-claim', 'Have applicable permits and codes confirmed by the relevant authority or qualified professional.']
+  ];
+  for (const [pattern, code, message] of hazardous) if (pattern.test(allText)) add(errors, code, message, 'plan');
+
+  if (!text(plan.budget_guidance) && !text(plan.budget_notes)) add(warnings, 'no-budget-guidance', 'State that a budget is missing or identify which user-provided budget still needs quotes.', 'budget_guidance');
+  if (!text(plan.safety_note) && !text(plan.verification_note)) add(warnings, 'no-verification-disclaimer', 'Explain that this is a draft and identify facts that still need independent verification.', 'safety_note');
+  if (errors.length) recommendations.push('Fix all errors before treating this plan as ready to execute.');
+  if (warnings.length) recommendations.push('Review warnings with the project owner; some may be acceptable if explicitly acknowledged.');
+  recommendations.push('Re-run checks after editing. These deterministic checks detect common structural issues, not every factual, legal, safety, or reasoning error.');
+  const deductions = errors.length * 15 + warnings.length * 4;
+  const score = Math.max(0, Math.min(100, 100 - deductions));
+  return {
+    engine: 'swiftquote-local-verifier',
+    checked_at: new Date().toISOString(),
+    score,
+    status: errors.length ? 'needs_changes' : warnings.length ? 'review_recommended' : 'structurally_consistent',
+    counts: { errors: errors.length, warnings: warnings.length, tasks: tasks.length, milestones: milestones.length, risks: risks.length, deliverables: deliverables.length },
+    errors, warnings, recommendations,
+    limitations: 'A high score is not a correctness guarantee. This verifier checks structure, references, duplicates, dependency cycles, and explicit risk/verification fields; it does not independently verify external facts or prove that a plan is safe or feasible.'
+  };
+}
+
+export function analyzeLocalRequirements(input = {}) {
+  const brief = clip(input.brief, 5000);
+  const constraints = clip(input.constraints, 1600);
+  const combined = (brief + ' ' + constraints).toLowerCase();
+  const gaps = [];
+  const add = (id, label, why, severity = 'medium') => gaps.push({ id, label, why, severity });
+  if (!/\b(?:for|customer|user|audience|team|family|tenant|provider|client)\b/i.test(brief)) add('audience', 'Identify who the result is for', 'The intended users affect scope, usability, and acceptance criteria.');
+  if (!/\b(?:must|need to|requirement|acceptance|success|done means|pass criteria)\b/i.test(combined)) add('acceptance', 'Define measurable acceptance criteria', 'Without pass/fail criteria, completion is subjective.');
+  if (!/\b(?:budget|\$\s*\d|usd|cost limit|price range|no budget)\b/i.test(combined)) add('budget', 'Set a budget or explicitly mark it unknown', 'Cost feasibility cannot be evaluated without a budget or a decision to defer it.');
+  if (!/\b(?:deadline|timeline|by [a-z]+|weeks?|months?|days?|flexible date)\b/i.test(combined)) add('timeline', 'Set a target timeline or mark it flexible', 'Timing affects sequencing and availability.');
+  if (!/\b(?:constraint|must not|cannot|existing|accessibility|security|privacy|permit|approval|compatib|dependenc)\b/i.test(combined)) add('constraints', 'List important constraints and dependencies', 'Hidden constraints commonly cause rework.');
+  if (!/\b(?:test|verify|inspect|review|validate|measure|proof)\b/i.test(combined)) add('verification', 'Decide how the result will be tested or inspected', 'A plan needs an objective way to verify the result.');
+  const highRisk = /\b(?:structural|load[- ]bearing|electrical|wiring|gas line|plumbing|waterproof|asbestos|lead paint|mold|medical|healthcare|payment processing|authentication|personal data|production deploy|financial advice)\b/i.test(combined);
+  if (highRisk) add('expert-review', 'Arrange qualified review for safety, security, or regulated work', 'The brief mentions a potentially high-impact area that should not rely on an automated draft alone.', 'high');
+  return {
+    engine: 'swiftquote-local-requirements',
+    brief_characters: brief.length,
+    gaps,
+    suggested_questions: gaps.map(g => g.label + ': ' + g.why),
+    note: 'Keyword-based gap detection is a prompt for discussion, not proof that a requirement is present or absent.'
+  };
+}

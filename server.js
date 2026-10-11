@@ -7,7 +7,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import OpenAI, { toFile } from 'openai';
 import { createAIProvider } from './ai-provider.js';
-import { buildLocalProjectPlan, buildLocalBlueprint } from './local-ai-engine.js';
+import { buildLocalProjectPlan, buildLocalBlueprint, validateLocalPlan, analyzeLocalRequirements } from './local-ai-engine.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -1451,6 +1451,23 @@ app.post('/api/ai/project-copilot',requireAccount,requireAccountCsrf,requireJson
     res.status(201).json({ok:true,engine:ai.configured?'external':'local',projectId:Number(stored.lastInsertRowid),project:plan,createdAt:now});
   }catch{
     res.status(502).json({error:'AI could not create a complete structured plan. Try adding clearer requirements or create a manual starter plan.'});
+  }
+});
+
+app.post('/api/ai/verify-plan',requireAccount,requireAccountCsrf,requireJson,(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!rateLimit(rateKey('ai-verify-plan',req.account.account_id),30,60*60_000))return res.status(429).json({error:'Plan verification limit reached. Try again later.'});
+  const body=req.body||{};
+  if(!body.plan||typeof body.plan!=='object'||Array.isArray(body.plan))return res.status(400).json({error:'Provide a project plan object to verify.'});
+  try{
+    const report=validateLocalPlan(body.plan);
+    const requirements=analyzeLocalRequirements({brief:clean(body.brief,5000),constraints:clean(body.constraints,1600)});
+    recordRisk(req.account.account_id,req,'local_plan_verification',0,{errors:report.counts.errors,warnings:report.counts.warnings});
+    return res.json({ok:true,report,requirements});
+  }catch(error){
+    console.error('Local plan verification failed:',error?.message||error);
+    return res.status(400).json({error:'The plan could not be checked. Review its structure and try again.'});
   }
 });
 
