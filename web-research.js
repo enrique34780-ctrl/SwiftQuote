@@ -35,6 +35,10 @@ export function shouldResearchMessage(message) {
   const text = String(message ?? '').trim();
   if (text.length < 18) return false;
   if (/^(hi|hello|hey|thanks|thank you|good morning|good afternoon|good evening)[!. ]*$/i.test(text)) return false;
+  // Never send obvious credentials, contact details, or sensitive account requests to search.
+  if (/\b(password|passcode|api[ -]?key|access token|secret|social security|ssn|credit card|bank account|my email|my phone|my address)\b/i.test(text)) return false;
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text)) return false;
+  if (/(?:\+?\d[\d ().-]{8,}\d)/.test(text)) return false;
   return /\?|\b(research|sources?|cite|citation|fact|factual|verify|check whether|latest|current|today|yesterday|this week|price|cost|compare|versus|\bvs\b|news|update|who is|what is|when did|where is|why does|how does|statistics|evidence|look up|find out|accurate|data|information)\b/i.test(text);
 }
 
