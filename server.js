@@ -1423,7 +1423,7 @@ function sanitizeProjectPlan(plan, fallbackTitle, fallbackType) {
     verification_plan:list(plan.verification_plan,20,400),
     next_actions:list(plan.next_actions,12,300),
     status:'draft',
-    safety_note:'AI-generated project draft. Confirm facts, prices, measurements, legal requirements, and safety-critical details. Do not treat estimates or generated content as verified.'
+    safety_note:'SwiftQuote-generated project draft. Independently verify facts, prices, measurements, legal requirements, and safety-critical details. Do not treat estimates or generated content as verified.'
   };
   if(!out.executive_summary||!out.goal||!out.workstreams.length)throw new Error('Incomplete project plan.');
   return out;
