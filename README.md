@@ -31,6 +31,16 @@ SwiftQuote is a real Node/Express application for selling or operating a local-s
 - Environment-based secrets
 - Health endpoint
 
+
+## Blueprint Studio and Project Simulator
+
+- `/blueprints.html` creates an editable starter project plan without AI and can request an AI-generated planning draft when a customer/provider account is signed in and OpenAI or Gemini text AI is configured.
+- `/simulator.html` accepts a user-provided photo, provides a local brush-and-color overlay, keeps a temporary list of user-selected products, and opens retailer search pages for Amazon, Walmart, Target, Home Depot, and Lowe's.
+- Optional AI image rendering uses the server-side OpenAI image API when `OPENAI_API_KEY` is configured. `OPENAI_IMAGE_MODEL` defaults to `gpt-image-1`. Never place API keys in frontend code.
+- AI blueprints and image renders are concepts, not guaranteed error-free plans, exact product mockups, professional measurements, permits, or engineering documents. Confirm dimensions, product fit, local rules, and safety-critical work with qualified professionals.
+- Retailer search links are not a live inventory integration. Do not advertise stock or prices as current until an authorized retailer API/feed is configured and its freshness/availability semantics are verified.
+- AI generation is rate-limited per account. The image endpoint only accepts compressed JPEG, PNG, or WebP data and is rate-limited separately. Image rendering requires a working OpenAI image API account and may incur API charges.
+
 ## Run locally
 
 ### Easiest container route
