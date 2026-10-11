@@ -7,6 +7,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import OpenAI, { toFile } from 'openai';
 import { createAIProvider } from './ai-provider.js';
+import { runAssistantTurn } from './ai-engine.js';
 import { buildLocalProjectPlan, buildLocalBlueprint, validateLocalPlan, analyzeLocalRequirements, buildLocalTestMatrix } from './local-ai-engine.js';
 
 const app = express();
@@ -21,6 +22,9 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const AI_BASE_URL = process.env.AI_BASE_URL || '';
+const AI_API_KEY = process.env.AI_API_KEY || '';
+const AI_MODEL = process.env.AI_MODEL || 'llama3.1';
 const STRIPE_PAYMENT_LINK = process.env.STRIPE_PAYMENT_LINK || '';
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_PROVIDER_PRICE_ID = process.env.STRIPE_PROVIDER_PRICE_ID || '';
@@ -47,6 +51,7 @@ const openai = process.env.OPENAI_API_KEY
 const ai = createAIProvider({
   openai, openaiApiKey: process.env.OPENAI_API_KEY || '', openaiModel: OPENAI_MODEL,
   geminiApiKey: GEMINI_API_KEY, geminiModel: GEMINI_MODEL,
+  compatibleBaseUrl: AI_BASE_URL, compatibleApiKey: AI_API_KEY, compatibleModel: AI_MODEL,
 });
 
 if (isProd && (!strongSecret(SESSION_SECRET) || ['dev-only-change-me','i-am-the-chosen-one-of-the-world.'].includes(SESSION_SECRET))) {
@@ -1120,7 +1125,7 @@ function processScheduledNotifications(){const now=Date.now();const rows=db.prep
 setInterval(processScheduledNotifications,60_000).unref();
 
 
-app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:true,localPlanningEngineAvailable:true,externalAIConfigured:Boolean(ai.configured),imageSimulationConfigured:Boolean(openai)}); });
+app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:true,localPlanningEngineAvailable:true,assistantEngineAvailable:true,externalAIConfigured:Boolean(ai.configured),modelProviders:ai.providers,imageSimulationConfigured:Boolean(openai)}); });
 
 app.post('/api/quote',requireJson,async(req,res)=>{
   noStore(res);
@@ -1428,6 +1433,23 @@ function sanitizeProjectPlan(plan, fallbackTitle, fallbackType) {
   if(!out.executive_summary||!out.goal||!out.workstreams.length)throw new Error('Incomplete project plan.');
   return out;
 }
+
+app.post('/api/ai/chat',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!rateLimit(rateKey('ai-chat',req.account.account_id),40,60*60_000))return res.status(429).json({error:'Assistant message limit reached. Try again later.'});
+  const body=req.body||{};
+  const message=typeof body.message==='string'?body.message.trim().slice(0,4000):'';
+  if(!message)return res.status(400).json({error:'Enter a message before sending it.'});
+  try{
+    const result=await runAssistantTurn({ai,message,history:body.history,appName:APP_NAME});
+    recordRisk(req.account.account_id,req,'assistant_chat',0,{chars:message.length,engine:result.engine});
+    return res.json({ok:true,...result});
+  }catch(error){
+    console.error('Assistant turn failed:',error?.message||'unknown error');
+    return res.status(502).json({error:'The configured AI model could not answer this message. Check the model endpoint and try again.'});
+  }
+});
 
 app.post('/api/ai/project-copilot',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
   noStore(res);
