@@ -107,6 +107,9 @@ test('project studio config exposes only AI feature readiness and protects AI en
   assert.equal(config.localPlanningEngineAvailable, true);
   assert.equal(typeof config.externalAIConfigured, 'boolean');
   assert.equal(typeof config.imageSimulationConfigured, 'boolean');
+  assert.equal(config.webResearchAvailable, true);
+  assert.ok(['tavily','wikipedia'].includes(config.webResearchProvider));
+  assert.equal(typeof config.webResearchPremiumConfigured, 'boolean');
   assert.equal(Object.hasOwn(config, 'OPENAI_API_KEY'), false);
   const blueprint = await fetch(baseUrl + '/api/ai/blueprint', {
     method: 'POST',

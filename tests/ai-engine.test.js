@@ -63,3 +63,38 @@ test('local assistant is transparent about the lack of a language model', async 
   assert.equal(result.modelConfigured, false);
   assert.match(result.reply, /not a language-model response/i);
 });
+
+test('assistant includes retrieved sources in the model context and returns source links', async () => {
+  let prompt;
+  const research = {
+    search: async query => {
+      assert.equal(query, 'What is the latest factual update?');
+      return { provider: 'tavily', results: [{ title: 'Trusted report', url: 'https://example.com/report', domain: 'example.com', snippet: 'Report says a fact.' }] };
+    },
+  };
+  const ai = {
+    configured: true,
+    generateText: async args => {
+      prompt = args.system;
+      return 'The report says this [1].';
+    },
+  };
+  const result = await runAssistantTurn({ ai, research, message: 'What is the latest factual update?' });
+  assert.match(prompt, /Trusted report/);
+  assert.match(prompt, /Cite only the numbered sources/);
+  assert.equal(result.researchStatus, 'results');
+  assert.equal(result.sources[0].url, 'https://example.com/report');
+  assert.match(result.reply, /\[1\]/);
+});
+
+test('assistant can provide a transparent source digest without a language model', async () => {
+  const result = await runAssistantTurn({
+    ai: { configured: false },
+    research: { search: async () => ({ provider: 'wikipedia', results: [{ title: 'Topic', url: 'https://en.wikipedia.org/wiki/Topic', domain: 'en.wikipedia.org', snippet: 'Source excerpt.' }] }) },
+    message: 'What is a factual topic about this?',
+  });
+  assert.equal(result.engine, 'local');
+  assert.equal(result.researchStatus, 'results');
+  assert.match(result.reply, /not a complete research conclusion/i);
+  assert.match(result.reply, /Source excerpt/);
+});
