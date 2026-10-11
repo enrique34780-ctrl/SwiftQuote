@@ -1,6 +1,8 @@
 /**
  * SwiftQuote AI provider router.
- * Supports OpenAI, Gemini, and any OpenAI-compatible endpoint (including Ollama).
+ * Supports OpenAI, Gemini, and OpenAI-compatible endpoints (including Ollama).
+ * When a compatible endpoint is configured, prefer it first so a self-hosted
+ * open-weight model can run without sending prompts to a commercial API.
  * All credentials remain server-side. Provider output is untrusted input and must
  * be validated by the feature that consumes it.
  */
@@ -42,11 +44,40 @@ export function createAIProvider({
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetchImpl(url, { ...options, signal: controller.signal, redirect: 'error' });
-      // The timeout remains active while the response body is read.
       return { response, clear: () => clearTimeout(timer) };
     } catch (error) {
       clearTimeout(timer);
       throw error;
+    }
+  }
+
+  async function generateCompatible({ systemPrompt, safeMessages, maxTokens, json }) {
+    const endpoint = /\/v1$/i.test(baseUrl) ? baseUrl + '/chat/completions' : baseUrl + '/v1/chat/completions';
+    const headers = { 'content-type': 'application/json' };
+    if (compatibleApiKey) headers.authorization = `Bearer ${compatibleApiKey}`;
+    const { response, clear } = await fetchWithDeadline(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: compatibleModel,
+        messages: [
+          ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
+          ...safeMessages,
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.2,
+        ...(json ? { response_format: { type: 'json_object' } } : {}),
+        stream: false,
+      }),
+    });
+    try {
+      if (!response.ok) throw new Error('Compatible AI request failed');
+      const data = await response.json();
+      const output = String(data?.choices?.[0]?.message?.content ?? '').trim();
+      if (!output) throw new Error('Compatible AI returned empty output');
+      return output;
+    } finally {
+      clear();
     }
   }
 
@@ -64,6 +95,17 @@ export function createAIProvider({
         : [{ role: 'user', content: userPrompt }];
       const maxTokens = Math.max(32, Math.min(3_000, Math.trunc(Number(maxOutputTokens) || 512)));
       const failures = [];
+
+      // If a self-hosted/open-weight endpoint is configured, prefer it before
+      // commercial providers. This avoids sending prompts to cloud APIs unless
+      // the self-hosted endpoint fails and a cloud provider is also configured.
+      if (hasCompatible) {
+        try {
+          return await generateCompatible({ systemPrompt, safeMessages, maxTokens, json });
+        } catch {
+          failures.push('Compatible AI request failed');
+        }
+      }
 
       if (hasOpenAI) {
         try {
@@ -114,38 +156,6 @@ export function createAIProvider({
           } finally { clear(); }
         } catch {
           failures.push('Gemini request failed');
-        }
-      }
-
-      if (hasCompatible) {
-        try {
-          const endpoint = /\/v1$/i.test(baseUrl) ? `${baseUrl}/chat/completions` : `${baseUrl}/v1/chat/completions`;
-          const headers = { 'content-type': 'application/json' };
-          if (compatibleApiKey) headers.authorization = `Bearer ${compatibleApiKey}`;
-          const { response, clear } = await fetchWithDeadline(endpoint, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              model: compatibleModel,
-              messages: [
-                ...(systemPrompt ? [{ role: 'system', content: systemPrompt }] : []),
-                ...safeMessages,
-              ],
-              max_tokens: maxTokens,
-              temperature: 0.2,
-              ...(json ? { response_format: { type: 'json_object' } } : {}),
-              stream: false,
-            }),
-          });
-          try {
-            if (!response.ok) throw new Error('Compatible AI request failed');
-            const data = await response.json();
-            const output = String(data?.choices?.[0]?.message?.content ?? '').trim();
-            if (output) return output;
-            failures.push('Compatible AI returned empty output');
-          } finally { clear(); }
-        } catch {
-          failures.push('Compatible AI request failed');
         }
       }
 
