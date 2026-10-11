@@ -1448,7 +1448,7 @@ app.post('/api/ai/project-copilot',requireAccount,requireAccountCsrf,requireJson
     const stored=db.prepare('INSERT INTO ai_projects(account_id,title,project_type,status,plan_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(req.account.account_id,plan.title,plan.project_type,'draft',JSON.stringify(plan),now,now);
     audit(req.account.account_id,'ai','project_plan_created','ai_project',Number(stored.lastInsertRowid),{type:plan.project_type});
     recordRisk(req.account.account_id,req,'ai_project_copilot',0,{chars:brief.length,workstreams:plan.workstreams.length});
-    res.status(201).json({ok:true,projectId:Number(stored.lastInsertRowid),project:plan,createdAt:now});
+    res.status(201).json({ok:true,engine:ai.configured?'external':'local',projectId:Number(stored.lastInsertRowid),project:plan,createdAt:now});
   }catch{
     res.status(502).json({error:'AI could not create a complete structured plan. Try adding clearer requirements or create a manual starter plan.'});
   }
