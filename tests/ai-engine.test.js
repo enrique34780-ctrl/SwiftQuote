@@ -98,3 +98,58 @@ test('assistant can provide a transparent source digest without a language model
   assert.match(result.reply, /not a complete research conclusion/i);
   assert.match(result.reply, /Source excerpt/);
 });
+
+test('assistant plans bounded complementary searches and synthesizes aggregated sources', async () => {
+  const searchCalls = [];
+  let modelCalls = 0;
+  const research = {
+    searchMany: async queries => {
+      searchCalls.push(...queries);
+      return {
+        provider: 'tavily',
+        queries,
+        unavailable: false,
+        results: [
+          { title: 'Official source', url: 'https://example.com/official', domain: 'example.com', snippet: 'Official fact.', publishedDate: '2026-10-01' },
+          { title: 'Independent source', url: 'https://example.org/review', domain: 'example.org', snippet: 'Independent confirmation.' },
+        ],
+      };
+    },
+  };
+  const ai = {
+    configured: true,
+    generateText: async args => {
+      modelCalls++;
+      if (args.json) return JSON.stringify({ queries: ['official source current policy', 'independent evidence current policy'] });
+      assert.match(args.system, /Official source/);
+      assert.match(args.system, /Independent source/);
+      assert.match(args.system, /Published: 2026-10-01/);
+      return 'The sources support the answer [1][2].';
+    },
+  };
+  const result = await runAssistantTurn({ ai, research, message: 'What is the latest factual update about this policy?' });
+  assert.equal(modelCalls, 2);
+  assert.equal(searchCalls.length, 3);
+  assert.equal(searchCalls[0], 'What is the latest factual update about this policy?');
+  assert.equal(result.sources.length, 2);
+  assert.equal(result.sources[0].publishedDate, '2026-10-01');
+  assert.equal(result.researchQueries.length, 3);
+  assert.match(result.reply, /\[1\]\[2\]/);
+});
+
+test('assistant falls back to original query if research query planning returns invalid JSON', async () => {
+  let queries;
+  const ai = {
+    configured: true,
+    generateText: async args => args.json ? 'not json' : 'A grounded answer [1].',
+  };
+  const research = {
+    searchMany: async input => {
+      queries = input;
+      return { provider: 'tavily', queries: input, results: [{ title: 'Source', url: 'https://example.com', domain: 'example.com', snippet: 'Fact.' }] };
+    },
+  };
+  const result = await runAssistantTurn({ ai, research, message: 'What is the latest factual update on this issue?' });
+  assert.deepEqual(queries, ['What is the latest factual update on this issue?']);
+  assert.equal(result.researchStatus, 'results');
+});

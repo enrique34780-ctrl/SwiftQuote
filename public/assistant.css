@@ -15,3 +15,5 @@
 .assistant-sources a{color:var(--link,#4169e1);text-decoration:underline}
 .assistant-source-domain{font-size:.82rem;opacity:.75}
 .assistant-sources p{font-size:.9rem;margin:.25rem 0;line-height:1.45}
+
+.assistant-source-date{font-size:.82rem;opacity:.8;margin:.2rem 0}

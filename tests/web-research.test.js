@@ -60,3 +60,43 @@ test('Wikipedia fallback is keyless, bounded, and reports unavailable safely', a
   assert.equal(failed.unavailable, true);
   assert.deepEqual(failed.results, []);
 });
+
+test('multi-query research runs bounded queries in parallel and deduplicates URLs', async () => {
+  const calls = [];
+  const research = createWebResearch({
+    apiKey: 'test-key',
+    fetchImpl: async (url, options) => {
+      const body = JSON.parse(options.body);
+      calls.push(body.query);
+      return {
+        ok: true,
+        json: async () => ({
+          results: [
+            { title: 'Shared source', url: 'https://example.com/shared', content: 'Same result' },
+            { title: body.query, url: 'https://example.com/' + encodeURIComponent(body.query), content: 'Unique result' },
+          ],
+        }),
+      };
+    },
+  });
+  const result = await research.searchMany([
+    'official facts',
+    'independent facts',
+    'recent facts',
+    'this fourth query must be ignored',
+  ]);
+  assert.equal(calls.length, 3);
+  assert.equal(result.queries.length, 3);
+  assert.equal(result.results.length, 4);
+  assert.equal(result.searchesCompleted, 3);
+  assert.equal(result.unavailable, false);
+  assert.equal(result.results.filter(item => item.url === 'https://example.com/shared').length, 1);
+});
+
+test('multi-query research degrades safely when every upstream search fails', async () => {
+  const research = createWebResearch({ apiKey: 'test-key', fetchImpl: async () => { throw new Error('upstream failure'); } });
+  const result = await research.searchMany(['first query', 'second query']);
+  assert.equal(result.unavailable, true);
+  assert.deepEqual(result.results, []);
+  assert.equal(result.searchesCompleted, 0);
+});

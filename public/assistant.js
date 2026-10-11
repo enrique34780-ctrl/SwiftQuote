@@ -13,7 +13,7 @@ function appendSources(sources){
  heading.textContent='Sources used';
  section.append(heading);
  const list=document.createElement('ol');
- for(const source of sources.slice(0,5)){
+ for(const source of sources.slice(0,9)){
   let url;
   try{url=new URL(source.url);if(!['https:','http:'].includes(url.protocol))continue;}catch{continue;}
   const item=document.createElement('li');
@@ -22,6 +22,7 @@ function appendSources(sources){
   link.textContent=String(source.title||source.domain||'Source');
   item.append(link);
   if(source.domain){const domain=document.createElement('span');domain.className='assistant-source-domain';domain.textContent=' — '+source.domain;item.append(domain);}
+  if(source.publishedDate){const date=document.createElement('p');date.className='assistant-source-date';date.textContent='Published: '+String(source.publishedDate).slice(0,80);item.append(date);}
   if(source.snippet){const snippet=document.createElement('p');snippet.textContent=String(source.snippet).slice(0,500);item.append(snippet);}
   list.append(item);
  }
