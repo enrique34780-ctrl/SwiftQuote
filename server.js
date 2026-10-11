@@ -7,6 +7,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import OpenAI, { toFile } from 'openai';
 import { createAIProvider } from './ai-provider.js';
+import { buildLocalProjectPlan, buildLocalBlueprint } from './local-ai-engine.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -1119,7 +1120,7 @@ function processScheduledNotifications(){const now=Date.now();const rows=db.prep
 setInterval(processScheduledNotifications,60_000).unref();
 
 
-app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:Boolean(ai.configured),imageSimulationConfigured:Boolean(openai)}); });
+app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:true,localPlanningEngineAvailable:true,externalAIConfigured:Boolean(ai.configured),imageSimulationConfigured:Boolean(openai)}); });
 
 app.post('/api/quote',requireJson,async(req,res)=>{
   noStore(res);
@@ -1347,12 +1348,16 @@ app.post('/api/ai/structure-request',requireAccount,requireAccountCsrf,requireJs
 app.post('/api/ai/blueprint',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
   noStore(res);
   if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
-  if(!ai.configured)return res.status(503).json({error:'AI blueprint generation is not configured yet. A server-side OpenAI or Gemini key is required.'});
   if(!rateLimit(rateKey('ai-blueprint',req.account.account_id),12,60*60_000))return res.status(429).json({error:'Blueprint generation limit reached. Try again later.'});
   const b=req.body||{};
   const title=clean(b.title,120),projectType=clean(b.type,80),brief=clean(b.brief,4000),budget=clean(b.budget,100),dimensions=clean(b.dimensions,1200),style=clean(b.style,300);
   if(title.length<2||brief.length<10)return res.status(400).json({error:'Provide a project name and at least 10 characters describing the project.'});
   try{
+    if(!ai.configured){
+      const blueprint=buildLocalBlueprint({title,type:projectType,brief,budget,dimensions,style});
+      recordRisk(req.account.account_id,req,'local_blueprint',0,{chars:brief.length,phaseCount:blueprint.phases.length});
+      return res.json({ok:true,blueprint,engine:'local'});
+    }
     const raw=String(await ai.generateText({
       system:'You are a cautious project-planning assistant. Return JSON only with keys: title, project_type, overview, design_goals (array of strings), assumptions (array of strings), phases (array of objects with name and tasks array), materials (array of objects with name, quantity_estimate, unit, notes), measurements_to_confirm (array of strings), safety_and_permit_checks (array of strings), budget_notes (string), professional_review (array of strings), status. Be precise about uncertainty. Never claim zero errors, guarantee an outcome, invent local building codes or permit rules, claim current retailer inventory/prices, or present rough quantities as verified. Use "to measure" where quantities are unknown. If budget is supplied, repeat it as the user\'s stated budget rather than claiming costs fit it. State that structural, electrical, plumbing, waterproofing, fire, gas, and other regulated or safety-critical work may require qualified professional review. Identify assumptions and missing measurements. Keep phases practical and ordered. Set status to "ai_draft".',
       user:JSON.stringify({title,project_type:projectType,brief,budget:budget||'not supplied',known_dimensions_and_constraints:dimensions||'not supplied',style_and_priorities:style||'not supplied'}),
@@ -1427,17 +1432,16 @@ function sanitizeProjectPlan(plan, fallbackTitle, fallbackType) {
 app.post('/api/ai/project-copilot',requireAccount,requireAccountCsrf,requireJson,async(req,res)=>{
   noStore(res);
   if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
-  if(!ai.configured)return res.status(503).json({error:'AI project planning is not configured. Add a server-side OpenAI or Gemini key in Render.'});
   if(!rateLimit(rateKey('ai-project-copilot',req.account.account_id),8,60*60_000))return res.status(429).json({error:'Project copilot limit reached. Try again later.'});
   const b=req.body||{};
   const title=clean(b.title,120),type=clean(b.type,80)||'Other',brief=clean(b.brief,5000),constraints=clean(b.constraints,1600),timeline=clean(b.timeline,160),budget=clean(b.budget,160);
   if(title.length<2||brief.length<20)return res.status(400).json({error:'Enter a project name and describe the goal in at least 20 characters.'});
   try{
-    const raw=String(await ai.generateText({
+    const raw=ai.configured ? String(await ai.generateText({
       system:'You are SwiftQuote Project Copilot, a careful project planning assistant for home, construction, service-business, product, event, operations, and software projects. Return JSON only with keys: title, project_type, executive_summary, goal, scope_included (string array), scope_excluded (string array), assumptions (string array), open_questions (string array), workstreams (array of objects with name, purpose, tasks array of objects with title, description, depends_on string array, effort, status), milestones (array of objects with name, acceptance_criteria string array, depends_on string array), risks (array of objects with risk, severity low/medium/high/critical, mitigation, owner), deliverables (array of objects with name and acceptance_criteria string array), resources (string array), budget_guidance (string), verification_plan (string array), next_actions (string array). Make a useful, ordered plan with actionable tasks, dependencies, acceptance criteria, risk controls, and verification. Separate facts from assumptions and ask questions where missing information materially changes the plan. Do not claim you executed tasks, accessed external systems, verified current inventory/prices, confirmed permits, or guaranteed accuracy. Never invent live prices or supplier stock. If budget or dates are missing, say so. For construction include measurement, permit/code confirmation, product fit, and professional review for structural/electrical/plumbing/gas/waterproofing/safety-critical work. For software include tests, security, privacy, deployment, monitoring, rollback, and human approval before production changes. Do not give unsafe instructions. Keep to 4-8 workstreams, 3-8 tasks per workstream, and clear next actions.',
       user:JSON.stringify({project_name:title,project_type:type,goal_and_context:brief,constraints_and_known_facts:constraints||'Not supplied',target_timeline:timeline||'Not supplied',budget:budget||'Not supplied'}),
       maxOutputTokens:1900,json:true
-    })).trim();
+    })).trim() : JSON.stringify(buildLocalProjectPlan({title,type,brief,constraints,timeline,budget}));
     const parsed=JSON.parse(raw);
     const plan=sanitizeProjectPlan(parsed,title,type);
     const now=Date.now();
