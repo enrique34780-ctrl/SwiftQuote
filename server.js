@@ -288,6 +288,19 @@ CREATE TABLE IF NOT EXISTS service_catalog (
   industry TEXT NOT NULL DEFAULT 'general',
   active INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS provider_showcase_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider_account_id INTEGER NOT NULL,
+  post_type TEXT NOT NULL CHECK(post_type IN ('project','video','ad')),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  media_url TEXT NOT NULL,
+  service_slug TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  FOREIGN KEY(provider_account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_showcase_active_created ON provider_showcase_posts(active, created_at DESC);
 CREATE TABLE IF NOT EXISTS stripe_events (
   event_id TEXT PRIMARY KEY,
   event_type TEXT NOT NULL,
@@ -1402,6 +1415,10 @@ app.get('/api/customer/price-check',requireAccount,(req,res)=>{noStore(res);cons
 app.get('/api/provider/roi',requireProvider,(req,res)=>{noStore(res);const id=req.account.account_id;const leads=Number(db.prepare("SELECT COUNT(*) c FROM lead_matches WHERE provider_account_id=?").get(id).c);const claimed=Number(db.prepare("SELECT COUNT(*) c FROM lead_matches WHERE provider_account_id=? AND status='claimed'").get(id).c);const jobs=Number(db.prepare("SELECT COUNT(*) c FROM jobs WHERE provider_account_id=? AND status='completed'").get(id).c);const revenue=Number(db.prepare("SELECT COALESCE(SUM(q.amount),0) total FROM quotes q WHERE q.provider_account_id=? AND q.status IN ('paid','accepted')").get(id).total);res.json({leads,claimed,completedJobs:jobs,conversionRate:claimed?jobs/claimed:0,quotedRevenue:revenue});});
 app.post('/api/provider/emergency-mode',requireProvider,requireAccountCsrf,requireJson,(req,res)=>{noStore(res);const enabled=req.body?.enabled===true;const r=db.prepare('UPDATE provider_service_areas SET emergency_available=? WHERE provider_account_id=?').run(enabled?1:0,req.account.account_id);if(!r.changes)return res.status(409).json({error:'Configure at least one service area before changing emergency mode.'});recordRisk(req.account.account_id,req,'emergency_mode_change',0,{enabled});audit(req.account.account_id,'provider','emergency_mode_changed','provider',req.account.account_id,{enabled});res.json({ok:true,enabled});});
 app.get('/api/customer/reminders',requireAccount,(req,res)=>{noStore(res);res.json({upcoming:db.prepare("SELECT id,kind,message,due_at FROM scheduled_notifications WHERE account_id=? AND status='pending' ORDER BY due_at LIMIT 50").all(req.account.account_id)});});
+
+app.get('/api/marketplace/showcase',(req,res)=>{noStore(res);const type=clean(req.query.type,20);const providerId=Number(req.query.providerId)||0;const params=[Date.now()];let where="s.active=1 AND a.status='active' AND sub.status='active' AND (sub.current_period_end IS NULL OR sub.current_period_end>?)";if(['project','video','ad'].includes(type)){where+=' AND s.post_type=?';params.push(type);}if(providerId>0){where+=' AND a.id=?';params.push(providerId);}const posts=db.prepare(`SELECT s.id,s.post_type,s.title,s.description,s.media_url,s.service_slug,s.created_at,p.business_name,p.industry,a.id provider_id FROM provider_showcase_posts s JOIN accounts a ON a.id=s.provider_account_id JOIN provider_profiles p ON p.account_id=a.id JOIN subscriptions sub ON sub.account_id=a.id WHERE ${where} ORDER BY s.created_at DESC LIMIT 60`).all(...params);res.json({posts});});
+app.post('/api/provider/showcase',requireJson,requireProvider,requireAccountCsrf,(req,res)=>{noStore(res);if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});if(!subscriptionActive(req.account.account_id))return res.status(402).json({error:'An active provider subscription is required to publish showcase content.'});if(!rateLimit(rateKey('showcase',req.account.account_id),10,3600000))return res.status(429).json({error:'Showcase publishing limit reached. Try again later.'});const b=req.body||{};const type=clean(b.type,20),title=clean(b.title,120),description=clean(b.description,800),mediaUrl=validHttpsUrl(clean(b.mediaUrl,500)),serviceSlug=clean(b.serviceSlug,80);if(!['project','video','ad'].includes(type)||title.length<3||!mediaUrl)return res.status(400).json({error:'Provide a valid content type, title, and HTTPS media URL.'});if(type==='video'){let host='';try{host=new URL(mediaUrl).hostname.toLowerCase();}catch{}if(!['youtube.com','www.youtube.com','youtu.be','www.youtu.be','vimeo.com','www.vimeo.com','player.vimeo.com'].includes(host))return res.status(400).json({error:'Video links must be from YouTube or Vimeo.'});}if(serviceSlug&&!db.prepare('SELECT 1 FROM service_catalog WHERE slug=? AND active=1').get(serviceSlug))return res.status(400).json({error:'Choose a valid service category.'});const result=db.prepare('INSERT INTO provider_showcase_posts(provider_account_id,post_type,title,description,media_url,service_slug,created_at) VALUES(?,?,?,?,?,?,?)').run(req.account.account_id,type,title,description,mediaUrl,serviceSlug,Date.now());audit(req.account.account_id,'provider','showcase_published','showcase',Number(result.lastInsertRowid),{type});res.status(201).json({ok:true,id:Number(result.lastInsertRowid)});});
+app.delete('/api/provider/showcase/:id',requireProvider,requireAccountCsrf,(req,res)=>{noStore(res);const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid post id.'});const result=db.prepare('DELETE FROM provider_showcase_posts WHERE id=? AND provider_account_id=?').run(id,req.account.account_id);if(!result.changes)return res.status(404).json({error:'Showcase post not found.'});audit(req.account.account_id,'provider','showcase_deleted','showcase',id,{});res.json({ok:true});});
 
 app.get('/api/health',(req,res)=>{
   noStore(res);
