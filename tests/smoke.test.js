@@ -205,7 +205,7 @@ test('customer can register, submit a service request, and retrieve it from thei
 
   const requestResponse = await fetch(baseUrl + '/api/marketplace/request', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', origin: baseUrl },
+    headers: { 'content-type': 'application/json', origin: baseUrl, cookie },
     body: JSON.stringify({
       name: 'Workspace Test Customer',
       email: 'workspace-customer@example.test',
