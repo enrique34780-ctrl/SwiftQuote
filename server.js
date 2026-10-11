@@ -1455,6 +1455,35 @@ app.get('/api/ai/projects',requireAccount,(req,res)=>{
   const rows=db.prepare('SELECT id,title,project_type,status,created_at,updated_at FROM ai_projects WHERE account_id=? ORDER BY updated_at DESC LIMIT 50').all(req.account.account_id);
   res.json({projects:rows.map(p=>({...p,id:Number(p.id)}))});
 });
+app.post('/api/ai/projects',requireAccount,requireAccountCsrf,requireJson,(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  if(!rateLimit(rateKey('ai-project-save',req.account.account_id),30,60*60_000))return res.status(429).json({error:'Project save limit reached.'});
+  const b=req.body||{};
+  try{
+    const plan=sanitizeProjectPlan(b.project,b.title,b.type);
+    const now=Date.now();
+    const stored=db.prepare('INSERT INTO ai_projects(account_id,title,project_type,status,plan_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(req.account.account_id,plan.title,plan.project_type,'draft',JSON.stringify(plan),now,now);
+    audit(req.account.account_id,'ai','project_plan_saved','ai_project',Number(stored.lastInsertRowid),{type:plan.project_type});
+    res.status(201).json({ok:true,projectId:Number(stored.lastInsertRowid),project:plan,createdAt:now,updatedAt:now});
+  }catch{return res.status(400).json({error:'Project plan is incomplete or invalid. Add a goal, summary, and at least one workstream with tasks.'});}
+});
+app.put('/api/ai/projects/:id',requireAccount,requireAccountCsrf,requireJson,(req,res)=>{
+  noStore(res);
+  if(!sameOrigin(req))return res.status(403).json({error:'Origin not allowed.'});
+  const id=Number(req.params.id);
+  if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({error:'Invalid project id.'});
+  if(!rateLimit(rateKey('ai-project-update',req.account.account_id),60,60*60_000))return res.status(429).json({error:'Project update limit reached.'});
+  const existing=db.prepare('SELECT id FROM ai_projects WHERE id=? AND account_id=?').get(id,req.account.account_id);
+  if(!existing)return res.status(404).json({error:'Project not found.'});
+  try{
+    const plan=sanitizeProjectPlan(req.body?.project,req.body?.title,req.body?.type);
+    const now=Date.now();
+    db.prepare('UPDATE ai_projects SET title=?,project_type=?,plan_json=?,updated_at=? WHERE id=? AND account_id=?').run(plan.title,plan.project_type,JSON.stringify(plan),now,id,req.account.account_id);
+    audit(req.account.account_id,'ai','project_plan_updated','ai_project',id,{type:plan.project_type});
+    res.json({ok:true,projectId:id,project:plan,updatedAt:now});
+  }catch{return res.status(400).json({error:'Project plan is incomplete or invalid.'});}
+});
 app.get('/api/ai/projects/:id',requireAccount,(req,res)=>{
   noStore(res);
   const id=Number(req.params.id);
