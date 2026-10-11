@@ -8,6 +8,7 @@ import Database from 'better-sqlite3';
 import OpenAI, { toFile } from 'openai';
 import { createAIProvider } from './ai-provider.js';
 import { runAssistantTurn } from './ai-engine.js';
+import { createWebResearch } from './web-research.js';
 import { buildLocalProjectPlan, buildLocalBlueprint, validateLocalPlan, analyzeLocalRequirements, buildLocalTestMatrix } from './local-ai-engine.js';
 
 const app = express();
@@ -25,6 +26,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const AI_BASE_URL = process.env.AI_BASE_URL || '';
 const AI_API_KEY = process.env.AI_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'llama3.1';
+const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
 const STRIPE_PAYMENT_LINK = process.env.STRIPE_PAYMENT_LINK || '';
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_PROVIDER_PRICE_ID = process.env.STRIPE_PROVIDER_PRICE_ID || '';
@@ -53,6 +55,7 @@ const ai = createAIProvider({
   geminiApiKey: GEMINI_API_KEY, geminiModel: GEMINI_MODEL,
   compatibleBaseUrl: AI_BASE_URL, compatibleApiKey: AI_API_KEY, compatibleModel: AI_MODEL,
 });
+const webResearch = createWebResearch({ apiKey: TAVILY_API_KEY });
 
 if (isProd && (!strongSecret(SESSION_SECRET) || ['dev-only-change-me','i-am-the-chosen-one-of-the-world.'].includes(SESSION_SECRET))) {
   console.error('Refusing production startup: SESSION_SECRET must be a strong random secret of at least 32 characters.');
@@ -1125,7 +1128,7 @@ function processScheduledNotifications(){const now=Date.now();const rows=db.prep
 setInterval(processScheduledNotifications,60_000).unref();
 
 
-app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:true,localPlanningEngineAvailable:true,assistantEngineAvailable:true,externalAIConfigured:Boolean(ai.configured),modelProviders:ai.providers,imageSimulationConfigured:Boolean(openai)}); });
+app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:true,localPlanningEngineAvailable:true,assistantEngineAvailable:true,externalAIConfigured:Boolean(ai.configured),modelProviders:ai.providers,webResearchAvailable:true,webResearchProvider:webResearch.provider,webResearchPremiumConfigured:Boolean(TAVILY_API_KEY),imageSimulationConfigured:Boolean(openai)}); });
 
 app.post('/api/quote',requireJson,async(req,res)=>{
   noStore(res);
@@ -1442,8 +1445,8 @@ app.post('/api/ai/chat',requireAccount,requireAccountCsrf,requireJson,async(req,
   const message=typeof body.message==='string'?body.message.trim().slice(0,4000):'';
   if(!message)return res.status(400).json({error:'Enter a message before sending it.'});
   try{
-    const result=await runAssistantTurn({ai,message,history:body.history,appName:APP_NAME});
-    recordRisk(req.account.account_id,req,'assistant_chat',0,{chars:message.length,engine:result.engine});
+    const result=await runAssistantTurn({ai,research:webResearch,message,history:body.history,appName:APP_NAME});
+    recordRisk(req.account.account_id,req,'assistant_chat',0,{chars:message.length,engine:result.engine,researchProvider:result.researchProvider,sourceCount:result.sources?.length||0});
     return res.json({ok:true,...result});
   }catch(error){
     console.error('Assistant turn failed:',error?.message||'unknown error');
