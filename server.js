@@ -26,6 +26,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 const AI_BASE_URL = process.env.AI_BASE_URL || '';
 const AI_API_KEY = process.env.AI_API_KEY || '';
 const AI_MODEL = process.env.AI_MODEL || 'llama3.1';
+const AI_PROVIDER_MODE = process.env.AI_PROVIDER_MODE === 'compatible-only' ? 'compatible-only' : 'auto';
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY || '';
 const STRIPE_PAYMENT_LINK = process.env.STRIPE_PAYMENT_LINK || '';
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
@@ -53,7 +54,7 @@ const openai = process.env.OPENAI_API_KEY
 const ai = createAIProvider({
   openai, openaiApiKey: process.env.OPENAI_API_KEY || '', openaiModel: OPENAI_MODEL,
   geminiApiKey: GEMINI_API_KEY, geminiModel: GEMINI_MODEL,
-  compatibleBaseUrl: AI_BASE_URL, compatibleApiKey: AI_API_KEY, compatibleModel: AI_MODEL,
+  compatibleBaseUrl: AI_BASE_URL, compatibleApiKey: AI_API_KEY, compatibleModel: AI_MODEL, mode: AI_PROVIDER_MODE,
 });
 const webResearch = createWebResearch({ apiKey: TAVILY_API_KEY });
 
@@ -1128,7 +1129,7 @@ function processScheduledNotifications(){const now=Date.now();const rows=db.prep
 setInterval(processScheduledNotifications,60_000).unref();
 
 
-app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:true,localPlanningEngineAvailable:true,assistantEngineAvailable:true,externalAIConfigured:Boolean(ai.configured),modelProviders:ai.providers,webResearchAvailable:true,webResearchProvider:webResearch.provider,webResearchPremiumConfigured:Boolean(TAVILY_API_KEY),imageSimulationConfigured:Boolean(openai)}); });
+app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&Object.values(STRIPE_PROVIDER_PRICE_IDS).every(Boolean)),blueprintAIConfigured:true,localPlanningEngineAvailable:true,assistantEngineAvailable:true,externalAIConfigured:Boolean(ai.configured),aiProviderMode:ai.mode,modelProviders:ai.providers,webResearchAvailable:true,webResearchProvider:webResearch.provider,webResearchPremiumConfigured:Boolean(TAVILY_API_KEY),imageSimulationConfigured:Boolean(openai)}); });
 
 app.post('/api/quote',requireJson,async(req,res)=>{
   noStore(res);

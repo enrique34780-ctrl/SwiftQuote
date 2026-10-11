@@ -21,17 +21,18 @@ Set these environment variables for a SwiftQuote server running on the **same ma
 AI_BASE_URL=http://127.0.0.1:11434/v1
 AI_MODEL=llama3.1
 AI_API_KEY=
+AI_PROVIDER_MODE=compatible-only
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 ```
 
-Restart SwiftQuote after changing environment variables. The app's `/api/config` endpoint reports only whether AI is configured; it must never expose secrets.
+Restart SwiftQuote after changing environment variables. The app's `/api/config` endpoint reports the non-secret provider mode and readiness flags; it does not expose credentials.
 
 ## Important deployment note
 
 `127.0.0.1` always means the machine/container SwiftQuote is running in, not your phone or personal computer. A SwiftQuote service hosted on Render cannot reach Ollama running on your home computer through that URL. For Render, run the model on a separate machine/service you control and connect it through a private network or a securely authenticated encrypted tunnel. Do **not** expose Ollama's unauthenticated port directly to the public internet. Use a strong access layer, restrict inbound access, and keep credentials in server-side environment variables.
 
-If only `AI_BASE_URL` is configured and the model server is unavailable, SwiftQuote returns a provider error rather than silently sending prompts to a commercial API. If commercial provider keys are also configured, the current router can fall back to them after the preferred compatible endpoint fails. Remove those keys if you require strict no-commercial-API behavior.
+Set `AI_PROVIDER_MODE=compatible-only` to enforce strict no-commercial-API behavior. In this mode, SwiftQuote will never send assistant prompts to OpenAI or Gemini, even if those keys are accidentally still configured; if the compatible model is unavailable, the request fails transparently. The default `auto` mode prefers the compatible endpoint but permits configured cloud fallbacks.
 
 ## What this does and does not do
 
