@@ -1104,7 +1104,7 @@ function processScheduledNotifications(){const now=Date.now();const rows=db.prep
 setInterval(processScheduledNotifications,60_000).unref();
 
 
-app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink}); });
+app.get('/api/config',(req,res)=>{ noStore(res); res.json({appName:APP_NAME,businessName:BUSINESS_NAME,paymentLink,billingConfigured:Boolean(STRIPE_SECRET_KEY&&STRIPE_WEBHOOK_SECRET&&STRIPE_PROVIDER_PRICE_IDS.starter)}); });
 
 app.post('/api/quote',requireJson,async(req,res)=>{
   noStore(res);
