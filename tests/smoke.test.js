@@ -425,9 +425,11 @@ test('public page links, local assets, and in-page anchors resolve', async () =>
     cache.set(key, result);
     return result;
   }
+  const home = await load('/');
   for (const page of pages) {
     const source = await load(page);
     assert.match(source.type, /text\/html/i, page + ' should return HTML');
+    if (page !== '/') assert.notEqual(source.body, home.body, page + ' must not silently fall back to the homepage');
     const refs = [...source.body.matchAll(/(?:href|src)=["']([^"']+)["']/gi)];
     for (const match of refs) {
       const target = match[1].trim();
@@ -435,7 +437,15 @@ test('public page links, local assets, and in-page anchors resolve', async () =>
           target.startsWith('mailto:') || target.startsWith('tel:') || target.startsWith('data:')) continue;
       const resolved = new URL(target, source.url);
       if (resolved.origin !== new URL(baseUrl).origin) continue;
-      const targetPage = await load(resolved.pathname + resolved.search);
+      const targetRoute = resolved.pathname + resolved.search;
+      const targetPage = await load(targetRoute);
+      if (resolved.pathname.endsWith('.css')) assert.match(targetPage.type, /text\/css/i, targetRoute + ' should be a stylesheet');
+      if (resolved.pathname.endsWith('.js')) assert.match(targetPage.type, /javascript|ecmascript/i, targetRoute + ' should be JavaScript');
+      if ((resolved.pathname.endsWith('.html') || resolved.pathname === '/admin') &&
+          resolved.pathname !== '/' && resolved.pathname !== '/index.html') {
+        assert.match(targetPage.type, /text\/html/i, targetRoute + ' should be HTML');
+        assert.notEqual(targetPage.body, home.body, targetRoute + ' must not silently fall back to the homepage');
+      }
       if (resolved.hash) {
         const id = decodeURIComponent(resolved.hash.slice(1));
         assert.ok(targetPage.body.includes('id="' + id + '"') ||
