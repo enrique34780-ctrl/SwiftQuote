@@ -1762,7 +1762,7 @@ app.use((err,req,res,next)=>{
   res.status(500).json({error:'Internal server error.'});
 });
 
-app.get('/{*splat}',(req,res)=>{ if(req.path.startsWith('/api/')) { noStore(res); return res.status(404).json({error:'Not found'}); } if(req.path.startsWith('/admin/')) { noStore(res); res.set('X-Robots-Tag','noindex, nofollow, noarchive'); return res.status(404).send('Not found'); } res.sendFile(path.join(process.cwd(),'public/index.html')); });
+app.get('/{*splat}',(req,res)=>{ noStore(res); if(req.path.startsWith('/api/')) return res.status(404).json({error:'Not found'}); if(req.path.startsWith('/admin/')) res.set('X-Robots-Tag','noindex, nofollow, noarchive'); return res.status(404).send('Not found'); });
 
 const server=app.listen(PORT,()=>console.log(`${APP_NAME} listening on http://localhost:${PORT}`));
 server.headersTimeout = 10_000;
