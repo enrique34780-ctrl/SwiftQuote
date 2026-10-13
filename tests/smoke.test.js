@@ -457,3 +457,10 @@ test('public page links, local assets, and in-page anchors resolve', async () =>
     }
   }
 });
+
+
+test('unknown routes return a real 404 instead of the homepage', async () => {
+  const response = await fetch(baseUrl + '/this-swiftquote-route-should-not-exist-404-check');
+  assert.equal(response.status, 404);
+  assert.equal(await response.text(), 'Not found');
+});
