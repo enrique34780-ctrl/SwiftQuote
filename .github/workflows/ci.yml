@@ -18,6 +18,7 @@ jobs:
         run: |
           node --check server.js
           node --check app.js
+          node --check sync-frontend.js
           node --check scripts/sync-frontend.js
           for file in public/*.js; do node --check "$file"; done
       - name: Run Node tests
