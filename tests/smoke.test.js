@@ -407,3 +407,43 @@ test('customer can register, submit a service request, and retrieve it from thei
   const body = await workspace.json();
   assert.ok(body.requests.some(item => item.id === created.requestId && item.service === service.label));
 });
+
+
+test('public page links, local assets, and in-page anchors resolve', async () => {
+  const pages = ['/', '/admin', '/service.html', '/provider.html', '/showcase.html',
+    '/assistant.html', '/copilot.html', '/blueprints.html', '/simulator.html'];
+  const cache = new Map();
+  async function load(route) {
+    const url = new URL(route, baseUrl);
+    const key = url.pathname + url.search;
+    if (cache.has(key)) return cache.get(key);
+    const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    assert.equal(response.status, 200, 'local link should resolve: ' + key);
+    const type = response.headers.get('content-type') || '';
+    const body = await response.text();
+    const result = { type, body, url };
+    cache.set(key, result);
+    return result;
+  }
+  for (const page of pages) {
+    const source = await load(page);
+    assert.match(source.type, /text\/html/i, page + ' should return HTML');
+    const refs = [...source.body.matchAll(/(?:href|src)=["']([^"']+)["']/gi)];
+    for (const match of refs) {
+      const target = match[1].trim();
+      if (!target || target.startsWith('http:') || target.startsWith('https:') ||
+          target.startsWith('mailto:') || target.startsWith('tel:') || target.startsWith('data:')) continue;
+      const resolved = new URL(target, source.url);
+      if (resolved.origin !== new URL(baseUrl).origin) continue;
+      const targetPage = await load(resolved.pathname + resolved.search);
+      if (resolved.hash) {
+        const id = decodeURIComponent(resolved.hash.slice(1));
+        assert.ok(targetPage.body.includes('id="' + id + '"') ||
+          targetPage.body.includes("id='" + id + "'") ||
+          targetPage.body.includes('name="' + id + '"') ||
+          targetPage.body.includes("name='" + id + "'"),
+          'anchor #' + id + ' should exist at ' + resolved.pathname);
+      }
+    }
+  }
+});
