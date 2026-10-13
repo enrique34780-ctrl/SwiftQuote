@@ -21,5 +21,7 @@ jobs:
           node --check sync-frontend.js
           node --check scripts/sync-frontend.js
           for file in public/*.js; do node --check "$file"; done
+      - name: Verify frontend sync entrypoint
+        run: node sync-frontend.js
       - name: Run Node tests
         run: npm test
