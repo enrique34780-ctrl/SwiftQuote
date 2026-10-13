@@ -410,44 +410,39 @@ test('customer can register, submit a service request, and retrieve it from thei
 
 
 test('public page links, local assets, and in-page anchors resolve', async () => {
-  const pages = [
-    '/', '/admin', '/service.html', '/provider.html', '/showcase.html',
-    '/assistant.html', '/copilot.html', '/blueprints.html', '/simulator.html'
-  ];
-  const htmlCache = new Map();
-
-  async function getHtml(route) {
+  const pages = ['/', '/admin', '/service.html', '/provider.html', '/showcase.html',
+    '/assistant.html', '/copilot.html', '/blueprints.html', '/simulator.html'];
+  const cache = new Map();
+  async function load(route) {
     const url = new URL(route, baseUrl);
     const key = url.pathname + url.search;
-    if (htmlCache.has(key)) return htmlCache.get(key);
+    if (cache.has(key)) return cache.get(key);
     const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
-    assert.equal(response.status, 200, `local link should resolve: ${key}`);
+    assert.equal(response.status, 200, 'local link should resolve: ' + key);
     const type = response.headers.get('content-type') || '';
     const body = await response.text();
-    htmlCache.set(key, { response, type, body, url });
-    return htmlCache.get(key);
+    const result = { type, body, url };
+    cache.set(key, result);
+    return result;
   }
-
   for (const page of pages) {
-    const loaded = await getHtml(page);
-    assert.match(loaded.type, /text\/html/i, `${page} should return HTML`);
-    const refs = [...loaded.body.matchAll(/\\b(href|src|action)\\s*=\\s*(["'])(.*?)\\2/gi)];
+    const source = await load(page);
+    assert.match(source.type, /text\/html/i, page + ' should return HTML');
+    const refs = [...source.body.matchAll(/(?:href|src)=["']([^"']+)["']/gi)];
     for (const match of refs) {
-      const attr = match[1].toLowerCase();
-      const target = match[3].trim();
-      if (!target || /^(?:https?:|mailto:|tel:|data:|javascript:|blob:)/i.test(target)) continue;
-
-      const resolved = new URL(target, loaded.url);
+      const target = match[1].trim();
+      if (!target || target.startsWith('http:') || target.startsWith('https:') ||
+          target.startsWith('mailto:') || target.startsWith('tel:') || target.startsWith('data:')) continue;
+      const resolved = new URL(target, source.url);
       if (resolved.origin !== new URL(baseUrl).origin) continue;
-      const targetRoute = resolved.pathname + resolved.search;
-      const targetPage = await getHtml(targetRoute);
-
-      if (resolved.hash && attr === 'href' && /text\/html/i.test(targetPage.type)) {
+      const targetPage = await load(resolved.pathname + resolved.search);
+      if (resolved.hash) {
         const id = decodeURIComponent(resolved.hash.slice(1));
-        const escapedId = id.replace(/[.*+?^\x24{}()|[\]\\\\]/g, '\\$&');
-        const hasId = new RegExp('\\\\bid\\\\s*=\\\\s*([\\\"\\\'])' + escapedId + '\\\\1', 'i').test(targetPage.body)
-          || new RegExp('\\\\bname\\\\s*=\\\\s*([\\\"\\\'])' + escapedId + '\\\\1', 'i').test(targetPage.body);
-        assert.ok(hasId, `anchor #${id} should exist at ${targetRoute}`);
+        assert.ok(targetPage.body.includes('id="' + id + '"') ||
+          targetPage.body.includes("id='" + id + "'") ||
+          targetPage.body.includes('name="' + id + '"') ||
+          targetPage.body.includes("name='" + id + "'"),
+          'anchor #' + id + ' should exist at ' + resolved.pathname);
       }
     }
   }
